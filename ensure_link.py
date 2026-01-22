@@ -180,11 +180,16 @@ class OverlaySaver:
     def show(self):
         if self.visible:
             return
-        if not os.path.exists(self.image_path):
+        img = None
+        if not self.image_path or not os.path.exists(self.image_path):
             log(f"LOCAL_IMAGE not found: {self.image_path}, using fallback")
             img = self._build_fallback_image()
         else:
-            img = Image.open(self.image_path)
+            try:
+                img = Image.open(self.image_path)
+            except Exception as exc:
+                log(f"LOCAL_IMAGE open error: {exc}, using fallback")
+                img = self._build_fallback_image()
 
         self.window = tk.Toplevel(self.root)
 
@@ -353,24 +358,79 @@ class AutoWakeApp:
         self._settings_window = window
 
         style = ttk.Style(window)
-        for theme in ("vista", "xpnative", "clam"):
+        for theme in ("clam", "vista", "xpnative"):
             try:
                 style.theme_use(theme)
                 break
             except tk.TclError:
                 continue
-        style.configure("Header.TLabel", font=("Segoe UI", 16, "bold"))
-        style.configure("Section.TLabelframe", padding=12)
-        style.configure("Section.TLabelframe.Label", font=("Segoe UI", 10, "bold"))
-        style.configure("Desc.TLabel", foreground="#5a5f6a")
-        style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"))
-        style.configure("Header.TFrame", background="#f5f6fa")
-        style.configure("Header.TLabel", background="#f5f6fa")
 
-        frm = ttk.Frame(window, padding=12)
+        colors = {
+            "bg": "#0f172a",
+            "card": "#111827",
+            "surface": "#1f2937",
+            "accent": "#38bdf8",
+            "text": "#e2e8f0",
+            "muted": "#94a3b8",
+            "border": "#334155",
+        }
+
+        window.configure(background=colors["bg"])
+        style.configure("TFrame", background=colors["bg"])
+        style.configure("Card.TFrame", background=colors["card"])
+        style.configure("Surface.TFrame", background=colors["surface"])
+        style.configure("TLabel", background=colors["bg"], foreground=colors["text"])
+        style.configure("Desc.TLabel", background=colors["bg"], foreground=colors["muted"])
+        style.configure("Header.TLabel", font=("Segoe UI", 16, "bold"), background=colors["bg"])
+        style.configure("Section.TLabelframe", padding=12, background=colors["surface"])
+        style.configure(
+            "Section.TLabelframe.Label",
+            font=("Segoe UI", 10, "bold"),
+            background=colors["surface"],
+            foreground=colors["text"],
+        )
+        style.configure("TCheckbutton", background=colors["surface"], foreground=colors["text"])
+        style.configure("TRadiobutton", background=colors["surface"], foreground=colors["text"])
+        style.configure("TNotebook", background=colors["bg"], borderwidth=0)
+        style.configure(
+            "TNotebook.Tab",
+            background=colors["card"],
+            foreground=colors["muted"],
+            padding=(16, 8),
+        )
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", colors["surface"])],
+            foreground=[("selected", colors["text"])],
+        )
+        style.configure(
+            "Primary.TButton",
+            font=("Segoe UI", 10, "bold"),
+            background=colors["accent"],
+            foreground="#0b1220",
+            padding=(14, 6),
+        )
+        style.map(
+            "Primary.TButton",
+            background=[("active", "#22d3ee"), ("pressed", "#0ea5e9")],
+            foreground=[("active", "#0b1220")],
+        )
+        style.configure(
+            "Ghost.TButton",
+            background=colors["surface"],
+            foreground=colors["text"],
+            padding=(12, 6),
+        )
+        style.map(
+            "Ghost.TButton",
+            background=[("active", colors["card"])],
+            foreground=[("active", colors["text"])],
+        )
+
+        frm = ttk.Frame(window, padding=16, style="TFrame")
         frm.pack(fill="both", expand=True)
 
-        header = ttk.Frame(frm, style="Header.TFrame")
+        header = ttk.Frame(frm, style="Card.TFrame", padding=16)
         header.pack(fill="x")
         ttk.Label(header, text="AutoWake 설정", style="Header.TLabel").pack(
             side="left"
@@ -381,7 +441,7 @@ class AutoWakeApp:
             style="Desc.TLabel",
         ).pack(side="left", padx=12)
 
-        ttk.Separator(frm).pack(fill="x", pady=10)
+        ttk.Separator(frm).pack(fill="x", pady=12)
 
         vars_map = {
             "url": tk.StringVar(value=cfg.url),
@@ -425,9 +485,9 @@ class AutoWakeApp:
         notebook = ttk.Notebook(frm)
         notebook.pack(fill="both", expand=True)
 
-        tab_general = ttk.Frame(notebook, padding=10)
-        tab_saver = ttk.Frame(notebook, padding=10)
-        tab_chrome = ttk.Frame(notebook, padding=10)
+        tab_general = ttk.Frame(notebook, padding=12, style="TFrame")
+        tab_saver = ttk.Frame(notebook, padding=12, style="TFrame")
+        tab_chrome = ttk.Frame(notebook, padding=12, style="TFrame")
         notebook.add(tab_general, text="일반")
         notebook.add(tab_saver, text="세이버")
         notebook.add(tab_chrome, text="크롬")
@@ -538,7 +598,7 @@ class AutoWakeApp:
             width=10,
         ).grid(row=3, column=1, sticky="w", pady=4)
 
-        footer = ttk.Frame(frm)
+        footer = ttk.Frame(frm, style="TFrame")
         footer.pack(fill="x", pady=8)
 
         def restore_defaults():
@@ -562,10 +622,10 @@ class AutoWakeApp:
             except Exception as e:
                 log(f"OPEN work dir error: {e}")
 
-        ttk.Button(footer, text="기본값 복원", command=restore_defaults).pack(
+        ttk.Button(footer, text="기본값 복원", command=restore_defaults, style="Ghost.TButton").pack(
             side="left"
         )
-        ttk.Button(footer, text="작업 폴더 열기", command=open_work_dir).pack(
+        ttk.Button(footer, text="작업 폴더 열기", command=open_work_dir, style="Ghost.TButton").pack(
             side="left", padx=6
         )
         ttk.Button(footer, text="닫기", command=window.destroy, style="Primary.TButton").pack(
@@ -586,7 +646,7 @@ class AutoWakeApp:
             return self._running
 
         def can_exit(_item):
-            return self._running
+            return True
 
         return pystray.Menu(
             pystray.MenuItem(
