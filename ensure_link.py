@@ -170,9 +170,10 @@ def launch_fullscreen_site(cfg: AppConfig) -> subprocess.Popen | None:
 
 # ----- 세이버 오버레이(Tkinter) -----
 class OverlaySaver:
-    def __init__(self, image_path: str):
+    def __init__(self, root: tk.Tk, image_path: str):
+        self.root = root
         self.image_path = image_path
-        self.root = None
+        self.window = None
         self.visible = False
         self.tk_img = None
 
@@ -183,17 +184,19 @@ class OverlaySaver:
             log(f"LOCAL_IMAGE not found: {self.image_path}")
             return
 
-        self.root = tk.Tk()
+        self.window = tk.Toplevel(self.root)
 
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
+        sw = self.window.winfo_screenwidth()
+        sh = self.window.winfo_screenheight()
 
         # Windows10 안정: fullscreen 속성 대신 geometry로 전체 덮기
-        self.root.geometry(f"{sw}x{sh}+0+0")
-        self.root.overrideredirect(True)   # 테두리/작업표시줄 없이
-        self.root.attributes("-topmost", True)
+        self.window.geometry(f"{sw}x{sh}+0+0")
+        self.window.overrideredirect(True)   # 테두리/작업표시줄 없이
+        self.window.attributes("-topmost", True)
 
-        canvas = tk.Canvas(self.root, width=sw, height=sh, highlightthickness=0, bg="black")
+        canvas = tk.Canvas(
+            self.window, width=sw, height=sh, highlightthickness=0, bg="black"
+        )
         canvas.pack(fill="both", expand=True)
 
         img = Image.open(self.image_path)
@@ -203,28 +206,28 @@ class OverlaySaver:
 
         self.visible = True
         log("Overlay SHOW")
-        self.root.update()
+        self.window.update()
 
     def hide(self):
         if not self.visible:
             return
         try:
-            self.root.destroy()
+            self.window.destroy()
         except Exception:
             pass
-        self.root = None
+        self.window = None
         self.visible = False
         self.tk_img = None
         log("Overlay HIDE")
 
     def pump(self):
         """표시 중일 때 화면 갱신 유지"""
-        if self.visible and self.root:
+        if self.visible and self.window:
             try:
-                self.root.update()
+                self.window.update()
             except Exception:
                 self.visible = False
-                self.root = None
+                self.window = None
                 self.tk_img = None
 
     @staticmethod
@@ -238,65 +241,68 @@ class AutoWakeApp:
     def __init__(self):
         self._mutex = single_instance_or_exit()
         self.cfg = load_config()
-        self._cfg_lock = threading.Lock()
-        self._stop_event = threading.Event()
-        self._worker_thread: threading.Thread | None = None
+        self._running = False
         self._full_proc: subprocess.Popen | None = None
         self._last_full_launch_ts = 0.0
-        self._saver = OverlaySaver(self.cfg.image_path)
+        self.root = tk.Tk()
+        self.root.withdraw()
+        self._saver = OverlaySaver(self.root, self.cfg.image_path)
         self._icon = None
         self._settings_window = None
 
     def start(self):
-        if self._worker_thread and self._worker_thread.is_alive():
+        if self._running:
             return
-        self._stop_event.clear()
-        self._worker_thread = threading.Thread(target=self._run_loop, daemon=True)
-        self._worker_thread.start()
+        self._running = True
+        self._ensure_chrome_launch()
+        self._schedule_tick()
+        self._refresh_menu()
 
     def stop(self):
-        self._stop_event.set()
-        if self._worker_thread:
-            self._worker_thread.join(timeout=3)
-        self._worker_thread = None
+        self._running = False
+        self._saver.hide()
+        self._refresh_menu()
 
     def update_config(self, new_cfg: AppConfig):
-        with self._cfg_lock:
-            self.cfg = new_cfg
-            self._saver.image_path = new_cfg.image_path
+        self.cfg = new_cfg
+        self._saver.image_path = new_cfg.image_path
         save_config(new_cfg)
 
-    def _get_config(self) -> AppConfig:
-        with self._cfg_lock:
-            return self.cfg
+    def _schedule_tick(self):
+        if not self._running:
+            return
+        poll_ms = int(self.cfg.poll_sec * 1000)
+        self.root.after(max(poll_ms, 100), self._tick)
 
-    def _run_loop(self):
+    def _ensure_chrome_launch(self):
         log("===== START =====")
-        cfg = self._get_config()
-        self._full_proc = launch_fullscreen_site(cfg)
-        self._last_full_launch_ts = time.time()
+        if self._full_proc is None or self._full_proc.poll() is not None:
+            self._full_proc = launch_fullscreen_site(self.cfg)
+            self._last_full_launch_ts = time.time()
 
-        while not self._stop_event.is_set():
-            cfg = self._get_config()
-            if cfg.chrome_repeat:
-                if self._full_proc is None or self._full_proc.poll() is not None:
-                    now = time.time()
-                    if now - self._last_full_launch_ts >= cfg.chrome_relaunch_cooldown_sec:
-                        log("FULL chrome not running -> relaunch")
-                        self._full_proc = launch_fullscreen_site(cfg)
-                        self._last_full_launch_ts = now
+    def _tick(self):
+        if not self._running:
+            return
+        cfg = self.cfg
+        if cfg.chrome_repeat:
+            if self._full_proc is None or self._full_proc.poll() is not None:
+                now = time.time()
+                if now - self._last_full_launch_ts >= cfg.chrome_relaunch_cooldown_sec:
+                    log("FULL chrome not running -> relaunch")
+                    self._full_proc = launch_fullscreen_site(cfg)
+                    self._last_full_launch_ts = now
 
-            idle = seconds_since_last_input()
-            if cfg.saver_enabled:
-                if idle <= cfg.active_threshold_sec:
-                    self._saver.hide()
-                elif idle >= cfg.idle_to_show_sec:
-                    self._saver.show()
-            else:
+        idle = seconds_since_last_input()
+        if cfg.saver_enabled:
+            if idle <= cfg.active_threshold_sec:
                 self._saver.hide()
+            elif idle >= cfg.idle_to_show_sec:
+                self._saver.show()
+        else:
+            self._saver.hide()
 
-            self._saver.pump()
-            time.sleep(cfg.poll_sec)
+        self._saver.pump()
+        self._schedule_tick()
 
     def _build_icon_image(self) -> Image.Image:
         size = 64
@@ -309,13 +315,16 @@ class AutoWakeApp:
             img.putpixel((size - 8, j), (255, 255, 255, 255))
         return img
 
-    def _open_settings(self, icon, item):
+    def _open_settings(self, icon=None, item=None):
+        self.root.after(0, self._show_settings_window)
+
+    def _show_settings_window(self):
         if self._settings_window and tk.Toplevel.winfo_exists(self._settings_window):
             self._settings_window.lift()
             return
 
-        cfg = self._get_config()
-        window = tk.Tk()
+        cfg = self.cfg
+        window = tk.Toplevel(self.root)
         window.title("AutoWake 설정")
         window.geometry("640x520")
         window.resizable(False, False)
@@ -456,25 +465,33 @@ class AutoWakeApp:
             row=row, column=2, sticky="e", pady=12
         )
 
-        window.mainloop()
-
-    def _exit_app(self, icon, item):
+    def _exit_app(self, icon=None, item=None):
         self.stop()
         if self._icon:
             self._icon.stop()
+        self.root.after(0, self.root.destroy)
 
     def _menu(self):
         def can_start():
-            return not (self._worker_thread and self._worker_thread.is_alive())
+            return not self._running
 
         def can_exit():
-            return self._worker_thread is not None and self._worker_thread.is_alive()
+            return self._running
 
         return pystray.Menu(
-            pystray.MenuItem("실행", lambda icon, item: self.start(), enabled=can_start),
+            pystray.MenuItem(
+                "실행", lambda icon, item: self.root.after(0, self.start), enabled=can_start
+            ),
             pystray.MenuItem("설정", self._open_settings),
             pystray.MenuItem("종료", self._exit_app, enabled=can_exit),
         )
+
+    def _refresh_menu(self):
+        if self._icon:
+            try:
+                self._icon.update_menu()
+            except Exception:
+                pass
 
     def run(self):
         self.start()
@@ -484,7 +501,8 @@ class AutoWakeApp:
             "AutoWake",
             self._menu(),
         )
-        self._icon.run()
+        self._icon.run_detached()
+        self.root.mainloop()
 
 
 def main():
