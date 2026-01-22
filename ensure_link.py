@@ -472,10 +472,10 @@ class AutoWakeApp:
         self.root.after(0, self.root.destroy)
 
     def _menu(self):
-        def can_start():
+        def can_start(_item):
             return not self._running
 
-        def can_exit():
+        def can_exit(_item):
             return self._running
 
         return pystray.Menu(
