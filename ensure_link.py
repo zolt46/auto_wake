@@ -10,7 +10,7 @@ from datetime import datetime
 import sys
 import tkinter as tk
 from tkinter import filedialog, ttk
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw, ImageFont
 import pystray
 
 # ================== 설정 ==================
@@ -181,8 +181,10 @@ class OverlaySaver:
         if self.visible:
             return
         if not os.path.exists(self.image_path):
-            log(f"LOCAL_IMAGE not found: {self.image_path}")
-            return
+            log(f"LOCAL_IMAGE not found: {self.image_path}, using fallback")
+            img = self._build_fallback_image()
+        else:
+            img = Image.open(self.image_path)
 
         self.window = tk.Toplevel(self.root)
 
@@ -199,7 +201,6 @@ class OverlaySaver:
         )
         canvas.pack(fill="both", expand=True)
 
-        img = Image.open(self.image_path)
         img = self.fit_contain(img, sw, sh)
         self.tk_img = ImageTk.PhotoImage(img)
         canvas.create_image(sw // 2, sh // 2, image=self.tk_img)
@@ -236,6 +237,27 @@ class OverlaySaver:
         scale = min(w / iw, h / ih)
         nw, nh = int(iw * scale), int(ih * scale)
         return img.resize((nw, nh), Image.LANCZOS)
+
+    def _build_fallback_image(self) -> Image.Image:
+        w, h = 1600, 900
+        img = Image.new("RGB", (w, h), (20, 24, 33))
+        draw = ImageDraw.Draw(img)
+        title = "AutoWake"
+        subtitle = "이미지 파일을 찾을 수 없습니다."
+        detail = "설정에서 경로를 확인하세요."
+        try:
+            title_font = ImageFont.truetype("Segoe UI", 72)
+            subtitle_font = ImageFont.truetype("Segoe UI", 36)
+            detail_font = ImageFont.truetype("Segoe UI", 28)
+        except Exception:
+            title_font = ImageFont.load_default()
+            subtitle_font = ImageFont.load_default()
+            detail_font = ImageFont.load_default()
+        draw.text((100, 180), title, fill=(230, 230, 230), font=title_font)
+        draw.text((100, 300), subtitle, fill=(200, 200, 200), font=subtitle_font)
+        draw.text((100, 360), detail, fill=(170, 170, 170), font=detail_font)
+        draw.rectangle([(100, 440), (1500, 444)], fill=(90, 98, 110))
+        return img
 
 class AutoWakeApp:
     def __init__(self):
@@ -331,20 +353,24 @@ class AutoWakeApp:
         self._settings_window = window
 
         style = ttk.Style(window)
-        try:
-            style.theme_use("clam")
-        except tk.TclError:
-            pass
-        style.configure("Header.TLabel", font=("Segoe UI", 14, "bold"))
+        for theme in ("vista", "xpnative", "clam"):
+            try:
+                style.theme_use(theme)
+                break
+            except tk.TclError:
+                continue
+        style.configure("Header.TLabel", font=("Segoe UI", 16, "bold"))
         style.configure("Section.TLabelframe", padding=12)
         style.configure("Section.TLabelframe.Label", font=("Segoe UI", 10, "bold"))
-        style.configure("Desc.TLabel", foreground="#666666")
+        style.configure("Desc.TLabel", foreground="#5a5f6a")
         style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"))
+        style.configure("Header.TFrame", background="#f5f6fa")
+        style.configure("Header.TLabel", background="#f5f6fa")
 
         frm = ttk.Frame(window, padding=12)
         frm.pack(fill="both", expand=True)
 
-        header = ttk.Frame(frm)
+        header = ttk.Frame(frm, style="Header.TFrame")
         header.pack(fill="x")
         ttk.Label(header, text="AutoWake 설정", style="Header.TLabel").pack(
             side="left"
@@ -556,12 +582,18 @@ class AutoWakeApp:
         def can_start(_item):
             return not self._running
 
+        def can_stop(_item):
+            return self._running
+
         def can_exit(_item):
             return self._running
 
         return pystray.Menu(
             pystray.MenuItem(
                 "실행", lambda icon, item: self.root.after(0, self.start), enabled=can_start
+            ),
+            pystray.MenuItem(
+                "중지", lambda icon, item: self.root.after(0, self.stop), enabled=can_stop
             ),
             pystray.MenuItem("설정", self._open_settings),
             pystray.MenuItem("종료", self._exit_app, enabled=can_exit),
