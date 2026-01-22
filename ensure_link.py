@@ -330,8 +330,32 @@ class AutoWakeApp:
         window.resizable(False, False)
         self._settings_window = window
 
+        style = ttk.Style(window)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure("Header.TLabel", font=("Segoe UI", 14, "bold"))
+        style.configure("Section.TLabelframe", padding=12)
+        style.configure("Section.TLabelframe.Label", font=("Segoe UI", 10, "bold"))
+        style.configure("Desc.TLabel", foreground="#666666")
+        style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"))
+
         frm = ttk.Frame(window, padding=12)
         frm.pack(fill="both", expand=True)
+
+        header = ttk.Frame(frm)
+        header.pack(fill="x")
+        ttk.Label(header, text="AutoWake 설정", style="Header.TLabel").pack(
+            side="left"
+        )
+        ttk.Label(
+            header,
+            text="설정은 자동 저장됩니다.",
+            style="Desc.TLabel",
+        ).pack(side="left", padx=12)
+
+        ttk.Separator(frm).pack(fill="x", pady=10)
 
         vars_map = {
             "url": tk.StringVar(value=cfg.url),
@@ -372,15 +396,15 @@ class AutoWakeApp:
         for key, var in vars_map.items():
             var.trace_add("write", on_change)
 
-        row = 0
-        ttk.Label(frm, text="시작 URL").grid(row=row, column=0, sticky="w")
-        url_entry = ttk.Entry(frm, textvariable=vars_map["url"], width=70)
-        url_entry.grid(row=row, column=1, columnspan=2, sticky="ew", pady=4)
+        notebook = ttk.Notebook(frm)
+        notebook.pack(fill="both", expand=True)
 
-        row += 1
-        ttk.Label(frm, text="이미지 파일 경로").grid(row=row, column=0, sticky="w")
-        img_entry = ttk.Entry(frm, textvariable=vars_map["image_path"], width=70)
-        img_entry.grid(row=row, column=1, sticky="ew", pady=4)
+        tab_general = ttk.Frame(notebook, padding=10)
+        tab_saver = ttk.Frame(notebook, padding=10)
+        tab_chrome = ttk.Frame(notebook, padding=10)
+        notebook.add(tab_general, text="일반")
+        notebook.add(tab_saver, text="세이버")
+        notebook.add(tab_chrome, text="크롬")
 
         def browse_image():
             path = filedialog.askopenfilename(
@@ -390,79 +414,136 @@ class AutoWakeApp:
             if path:
                 vars_map["image_path"].set(path)
 
-        ttk.Button(frm, text="찾기", command=browse_image).grid(
-            row=row, column=2, padx=6
+        general_box = ttk.Labelframe(
+            tab_general, text="기본 정보", style="Section.TLabelframe"
         )
+        general_box.pack(fill="x", pady=6)
+        ttk.Label(general_box, text="시작 URL").grid(row=0, column=0, sticky="w")
+        ttk.Entry(general_box, textvariable=vars_map["url"], width=60).grid(
+            row=0, column=1, columnspan=2, sticky="ew", pady=4
+        )
+        ttk.Label(
+            general_box,
+            text="전체화면으로 열릴 웹 페이지 주소를 입력하세요.",
+            style="Desc.TLabel",
+        ).grid(row=1, column=1, columnspan=2, sticky="w", pady=(0, 6))
 
-        row += 1
-        ttk.Label(frm, text="세이버 표시 대기(초)").grid(row=row, column=0, sticky="w")
+        ttk.Label(general_box, text="이미지 파일 경로").grid(row=2, column=0, sticky="w")
+        ttk.Entry(general_box, textvariable=vars_map["image_path"], width=60).grid(
+            row=2, column=1, sticky="ew", pady=4
+        )
+        ttk.Button(general_box, text="찾기", command=browse_image).grid(
+            row=2, column=2, padx=6
+        )
+        ttk.Label(
+            general_box,
+            text="세이버에 표시할 이미지 파일을 선택합니다.",
+            style="Desc.TLabel",
+        ).grid(row=3, column=1, columnspan=2, sticky="w")
+        general_box.columnconfigure(1, weight=1)
+
+        saver_box = ttk.Labelframe(
+            tab_saver, text="세이버 동작", style="Section.TLabelframe"
+        )
+        saver_box.pack(fill="x", pady=6)
+        ttk.Checkbutton(
+            saver_box, text="세이버 사용", variable=vars_map["saver_enabled"]
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(saver_box, text="세이버 표시 대기(초)").grid(
+            row=1, column=0, sticky="w"
+        )
         ttk.Spinbox(
-            frm,
+            saver_box,
             from_=1,
             to=3600,
             textvariable=vars_map["idle_to_show_sec"],
             width=10,
-        ).grid(row=row, column=1, sticky="w", pady=4)
-
-        row += 1
-        ttk.Label(frm, text="활동 감지 임계(초)").grid(row=row, column=0, sticky="w")
+        ).grid(row=1, column=1, sticky="w", pady=4)
+        ttk.Label(saver_box, text="활동 감지 임계(초)").grid(
+            row=2, column=0, sticky="w"
+        )
         ttk.Spinbox(
-            frm,
+            saver_box,
             from_=0.1,
             to=60,
             increment=0.1,
             textvariable=vars_map["active_threshold_sec"],
             width=10,
-        ).grid(row=row, column=1, sticky="w", pady=4)
-
-        row += 1
-        ttk.Label(frm, text="루프 주기(초)").grid(row=row, column=0, sticky="w")
+        ).grid(row=2, column=1, sticky="w", pady=4)
+        ttk.Label(saver_box, text="루프 주기(초)").grid(
+            row=3, column=0, sticky="w"
+        )
         ttk.Spinbox(
-            frm,
+            saver_box,
             from_=0.1,
             to=10,
             increment=0.1,
             textvariable=vars_map["poll_sec"],
             width=10,
-        ).grid(row=row, column=1, sticky="w", pady=4)
+        ).grid(row=3, column=1, sticky="w", pady=4)
 
-        row += 1
-        ttk.Label(frm, text="크롬 재실행 쿨다운(초)").grid(row=row, column=0, sticky="w")
+        chrome_box = ttk.Labelframe(
+            tab_chrome, text="크롬 실행", style="Section.TLabelframe"
+        )
+        chrome_box.pack(fill="x", pady=6)
+        ttk.Checkbutton(
+            chrome_box, text="크롬 전체화면 시작", variable=vars_map["chrome_fullscreen"]
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Checkbutton(
+            chrome_box, text="크롬 키오스크 모드", variable=vars_map["chrome_kiosk"]
+        ).grid(row=1, column=0, columnspan=2, sticky="w")
+        ttk.Label(chrome_box, text="크롬 재실행 모드").grid(
+            row=2, column=0, sticky="w"
+        )
+        ttk.Radiobutton(
+            chrome_box, text="반복", variable=vars_map["chrome_repeat"], value=True
+        ).grid(row=2, column=1, sticky="w")
+        ttk.Radiobutton(
+            chrome_box, text="1회만", variable=vars_map["chrome_repeat"], value=False
+        ).grid(row=2, column=2, sticky="w")
+        ttk.Label(chrome_box, text="크롬 재실행 쿨다운(초)").grid(
+            row=3, column=0, sticky="w"
+        )
         ttk.Spinbox(
-            frm,
+            chrome_box,
             from_=1,
             to=3600,
             textvariable=vars_map["chrome_relaunch_cooldown_sec"],
             width=10,
-        ).grid(row=row, column=1, sticky="w", pady=4)
+        ).grid(row=3, column=1, sticky="w", pady=4)
 
-        row += 1
-        ttk.Checkbutton(
-            frm, text="크롬 전체화면 시작", variable=vars_map["chrome_fullscreen"]
-        ).grid(row=row, column=0, columnspan=2, sticky="w")
+        footer = ttk.Frame(frm)
+        footer.pack(fill="x", pady=8)
 
-        row += 1
-        ttk.Checkbutton(
-            frm, text="크롬 키오스크 모드", variable=vars_map["chrome_kiosk"]
-        ).grid(row=row, column=0, columnspan=2, sticky="w")
+        def restore_defaults():
+            defaults = AppConfig()
+            vars_map["url"].set(defaults.url)
+            vars_map["image_path"].set(defaults.image_path)
+            vars_map["idle_to_show_sec"].set(defaults.idle_to_show_sec)
+            vars_map["active_threshold_sec"].set(defaults.active_threshold_sec)
+            vars_map["poll_sec"].set(defaults.poll_sec)
+            vars_map["chrome_relaunch_cooldown_sec"].set(
+                defaults.chrome_relaunch_cooldown_sec
+            )
+            vars_map["chrome_fullscreen"].set(defaults.chrome_fullscreen)
+            vars_map["chrome_kiosk"].set(defaults.chrome_kiosk)
+            vars_map["saver_enabled"].set(defaults.saver_enabled)
+            vars_map["chrome_repeat"].set(defaults.chrome_repeat)
 
-        row += 1
-        ttk.Checkbutton(
-            frm, text="세이버 사용", variable=vars_map["saver_enabled"]
-        ).grid(row=row, column=0, columnspan=2, sticky="w")
+        def open_work_dir():
+            try:
+                os.startfile(cfg.work_dir)
+            except Exception as e:
+                log(f"OPEN work dir error: {e}")
 
-        row += 1
-        ttk.Label(frm, text="크롬 재실행 모드").grid(row=row, column=0, sticky="w")
-        ttk.Radiobutton(
-            frm, text="반복", variable=vars_map["chrome_repeat"], value=True
-        ).grid(row=row, column=1, sticky="w")
-        ttk.Radiobutton(
-            frm, text="1회만", variable=vars_map["chrome_repeat"], value=False
-        ).grid(row=row, column=2, sticky="w")
-
-        row += 1
-        ttk.Button(frm, text="닫기", command=window.destroy).grid(
-            row=row, column=2, sticky="e", pady=12
+        ttk.Button(footer, text="기본값 복원", command=restore_defaults).pack(
+            side="left"
+        )
+        ttk.Button(footer, text="작업 폴더 열기", command=open_work_dir).pack(
+            side="left", padx=6
+        )
+        ttk.Button(footer, text="닫기", command=window.destroy, style="Primary.TButton").pack(
+            side="right"
         )
 
     def _exit_app(self, icon=None, item=None):
