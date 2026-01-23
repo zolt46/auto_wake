@@ -16,12 +16,15 @@ import pystray
 # ================== 설정 ==================
 DEFAULT_URL = "https://lib.koreatech.ac.kr/search/i-discovery"
 DEFAULT_LOCAL_IMAGE = (
-    r"C:\AutoWake"
+    r"C:\Users\seewo\Desktop\closing_new_proj\auto_close\AutoWake"
     r"\학술정보팀) 협정PC 안내 바탕화면.png"
 )
 
 WORK_DIR = r"C:\AutoWake"
 CONFIG_FILE = os.path.join(WORK_DIR, "config.json")
+DEFAULT_BUNDLED_IMAGE = os.path.join(
+    os.path.dirname(__file__), "assets", "default_saver.png"
+)
 
 CHROME_CANDIDATES = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -79,6 +82,8 @@ class AppConfig:
     saver_enabled: bool = True
     chrome_repeat: bool = True
     ui_theme: str = "light"
+    saver_image_mode: str = "path"
+    bundled_image_path: str = DEFAULT_BUNDLED_IMAGE
 
     @classmethod
     def from_dict(cls, data: dict) -> "AppConfig":
@@ -97,6 +102,10 @@ class AppConfig:
             saver_enabled=bool(data.get("saver_enabled", True)),
             chrome_repeat=bool(data.get("chrome_repeat", True)),
             ui_theme=str(data.get("ui_theme", "light")),
+            saver_image_mode=str(data.get("saver_image_mode", "path")),
+            bundled_image_path=str(
+                data.get("bundled_image_path", DEFAULT_BUNDLED_IMAGE)
+            ),
         )
 
 
@@ -172,9 +181,17 @@ def launch_fullscreen_site(cfg: AppConfig) -> subprocess.Popen | None:
 
 # ----- 세이버 오버레이(Tkinter) -----
 class OverlaySaver:
-    def __init__(self, root: tk.Tk, image_path: str):
+    def __init__(
+        self,
+        root: tk.Tk,
+        image_path: str,
+        image_mode: str,
+        bundled_image_path: str,
+    ):
         self.root = root
         self.image_path = image_path
+        self.image_mode = image_mode
+        self.bundled_image_path = bundled_image_path
         self.window = None
         self.visible = False
         self.tk_img = None
@@ -182,16 +199,7 @@ class OverlaySaver:
     def show(self):
         if self.visible:
             return
-        img = None
-        if not self.image_path or not os.path.exists(self.image_path):
-            log(f"LOCAL_IMAGE not found: {self.image_path}, using fallback")
-            img = self._build_fallback_image()
-        else:
-            try:
-                img = Image.open(self.image_path)
-            except Exception as exc:
-                log(f"LOCAL_IMAGE open error: {exc}, using fallback")
-                img = self._build_fallback_image()
+        img = self._load_saver_image()
 
         self.window = tk.Toplevel(self.root)
 
@@ -215,6 +223,26 @@ class OverlaySaver:
         self.visible = True
         log("Overlay SHOW")
         self.window.update()
+
+    def _load_saver_image(self) -> Image.Image:
+        mode = (self.image_mode or "path").lower()
+        if mode == "generated":
+            return self._build_fallback_image()
+        if mode == "bundled":
+            return self._load_image_or_fallback(
+                self.bundled_image_path, "BUNDLED_IMAGE"
+            )
+        return self._load_image_or_fallback(self.image_path, "LOCAL_IMAGE")
+
+    def _load_image_or_fallback(self, path: str, label: str) -> Image.Image:
+        if not path or not os.path.exists(path):
+            log(f"{label} not found: {path}, using fallback")
+            return self._build_fallback_image()
+        try:
+            return Image.open(path)
+        except Exception as exc:
+            log(f"{label} open error: {exc}, using fallback")
+            return self._build_fallback_image()
 
     def hide(self):
         if not self.visible:
@@ -290,7 +318,12 @@ class AutoWakeApp:
         self._last_full_launch_ts = 0.0
         self.root = tk.Tk()
         self.root.withdraw()
-        self._saver = OverlaySaver(self.root, self.cfg.image_path)
+        self._saver = OverlaySaver(
+            self.root,
+            self.cfg.image_path,
+            self.cfg.saver_image_mode,
+            self.cfg.bundled_image_path,
+        )
         self._icon = None
         self._settings_window = None
 
@@ -310,6 +343,8 @@ class AutoWakeApp:
     def update_config(self, new_cfg: AppConfig):
         self.cfg = new_cfg
         self._saver.image_path = new_cfg.image_path
+        self._saver.image_mode = new_cfg.saver_image_mode
+        self._saver.bundled_image_path = new_cfg.bundled_image_path
         save_config(new_cfg)
 
     def _schedule_tick(self):
@@ -488,6 +523,8 @@ class AutoWakeApp:
             "saver_enabled": tk.BooleanVar(value=cfg.saver_enabled),
             "chrome_repeat": tk.BooleanVar(value=cfg.chrome_repeat),
             "ui_theme": tk.StringVar(value=theme_palette),
+            "saver_image_mode": tk.StringVar(value=cfg.saver_image_mode),
+            "bundled_image_path": tk.StringVar(value=cfg.bundled_image_path),
         }
 
         def apply_config():
@@ -506,6 +543,8 @@ class AutoWakeApp:
                 saver_enabled=vars_map["saver_enabled"].get(),
                 chrome_repeat=vars_map["chrome_repeat"].get(),
                 ui_theme=vars_map["ui_theme"].get(),
+                saver_image_mode=vars_map["saver_image_mode"].get(),
+                bundled_image_path=vars_map["bundled_image_path"].get(),
             )
             self.update_config(new_cfg)
 
@@ -557,6 +596,8 @@ class AutoWakeApp:
                 vars_map["saver_enabled"].set(imported.saver_enabled)
                 vars_map["chrome_repeat"].set(imported.chrome_repeat)
                 vars_map["ui_theme"].set(imported.ui_theme)
+                vars_map["saver_image_mode"].set(imported.saver_image_mode)
+                vars_map["bundled_image_path"].set(imported.bundled_image_path)
             except Exception as exc:
                 log(f"IMPORT config error: {exc}")
 
@@ -624,8 +665,38 @@ class AutoWakeApp:
         ttk.Checkbutton(
             saver_box, text="세이버 사용", variable=vars_map["saver_enabled"]
         ).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(saver_box, text="이미지 소스").grid(row=1, column=0, sticky="w")
+        ttk.Radiobutton(
+            saver_box,
+            text="경로 지정",
+            variable=vars_map["saver_image_mode"],
+            value="path",
+        ).grid(row=1, column=1, sticky="w")
+        ttk.Radiobutton(
+            saver_box,
+            text="패키징 기본 이미지",
+            variable=vars_map["saver_image_mode"],
+            value="bundled",
+        ).grid(row=2, column=1, sticky="w")
+        ttk.Radiobutton(
+            saver_box,
+            text="안내 문구 기본 이미지",
+            variable=vars_map["saver_image_mode"],
+            value="generated",
+        ).grid(row=3, column=1, sticky="w")
+        ttk.Label(saver_box, text="패키징 이미지 경로").grid(
+            row=4, column=0, sticky="w"
+        )
+        ttk.Entry(
+            saver_box, textvariable=vars_map["bundled_image_path"], width=44
+        ).grid(row=4, column=1, sticky="ew", pady=4)
+        ttk.Label(
+            saver_box,
+            text="assets 폴더에 넣은 기본 이미지를 지정합니다.",
+            style="Desc.TLabel",
+        ).grid(row=5, column=1, columnspan=2, sticky="w")
         ttk.Label(saver_box, text="세이버 표시 대기(초)").grid(
-            row=1, column=0, sticky="w"
+            row=6, column=0, sticky="w"
         )
         ttk.Spinbox(
             saver_box,
@@ -633,9 +704,9 @@ class AutoWakeApp:
             to=3600,
             textvariable=vars_map["idle_to_show_sec"],
             width=10,
-        ).grid(row=1, column=1, sticky="w", pady=4)
+        ).grid(row=6, column=1, sticky="w", pady=4)
         ttk.Label(saver_box, text="활동 감지 임계(초)").grid(
-            row=2, column=0, sticky="w"
+            row=7, column=0, sticky="w"
         )
         ttk.Spinbox(
             saver_box,
@@ -644,9 +715,9 @@ class AutoWakeApp:
             increment=0.1,
             textvariable=vars_map["active_threshold_sec"],
             width=10,
-        ).grid(row=2, column=1, sticky="w", pady=4)
+        ).grid(row=7, column=1, sticky="w", pady=4)
         ttk.Label(saver_box, text="루프 주기(초)").grid(
-            row=3, column=0, sticky="w"
+            row=8, column=0, sticky="w"
         )
         ttk.Spinbox(
             saver_box,
@@ -655,7 +726,8 @@ class AutoWakeApp:
             increment=0.1,
             textvariable=vars_map["poll_sec"],
             width=10,
-        ).grid(row=3, column=1, sticky="w", pady=4)
+        ).grid(row=8, column=1, sticky="w", pady=4)
+        saver_box.columnconfigure(1, weight=1)
 
         chrome_box = ttk.Labelframe(
             tab_chrome, text="크롬 실행", style="Section.TLabelframe"
@@ -705,6 +777,8 @@ class AutoWakeApp:
             vars_map["saver_enabled"].set(defaults.saver_enabled)
             vars_map["chrome_repeat"].set(defaults.chrome_repeat)
             vars_map["ui_theme"].set(defaults.ui_theme)
+            vars_map["saver_image_mode"].set(defaults.saver_image_mode)
+            vars_map["bundled_image_path"].set(defaults.bundled_image_path)
 
         def open_work_dir():
             try:
