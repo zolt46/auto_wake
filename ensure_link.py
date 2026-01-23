@@ -258,9 +258,22 @@ class OverlaySaver:
             title_font = ImageFont.load_default()
             subtitle_font = ImageFont.load_default()
             detail_font = ImageFont.load_default()
-        draw.text((100, 180), title, fill=(230, 230, 230), font=title_font)
-        draw.text((100, 300), subtitle, fill=(200, 200, 200), font=subtitle_font)
-        draw.text((100, 360), detail, fill=(170, 170, 170), font=detail_font)
+        def safe_text(text: str) -> str:
+            try:
+                text.encode("latin-1")
+                return text
+            except UnicodeEncodeError:
+                return "Fallback image in use."
+
+        def draw_line(pos, text, font, color):
+            try:
+                draw.text(pos, text, fill=color, font=font)
+            except Exception:
+                draw.text(pos, safe_text(text), fill=color, font=font)
+
+        draw_line((100, 180), title, title_font, (230, 230, 230))
+        draw_line((100, 300), subtitle, subtitle_font, (200, 200, 200))
+        draw_line((100, 360), detail, detail_font, (170, 170, 170))
         draw.rectangle([(100, 440), (1500, 444)], fill=(90, 98, 110))
         return img
 
