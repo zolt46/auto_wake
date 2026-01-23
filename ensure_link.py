@@ -16,7 +16,7 @@ import pystray
 # ================== 설정 ==================
 DEFAULT_URL = "https://lib.koreatech.ac.kr/search/i-discovery"
 DEFAULT_LOCAL_IMAGE = (
-    r"C:\Users\seewo\Desktop\closing_new_proj\auto_close\AutoWake"
+    r"C:\AutoWake"
     r"\학술정보팀) 협정PC 안내 바탕화면.png"
 )
 
