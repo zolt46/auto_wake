@@ -78,6 +78,7 @@ class AppConfig:
     chrome_kiosk: bool = False
     saver_enabled: bool = True
     chrome_repeat: bool = True
+    ui_theme: str = "light"
 
     @classmethod
     def from_dict(cls, data: dict) -> "AppConfig":
@@ -95,6 +96,7 @@ class AppConfig:
             chrome_kiosk=bool(data.get("chrome_kiosk", False)),
             saver_enabled=bool(data.get("saver_enabled", True)),
             chrome_repeat=bool(data.get("chrome_repeat", True)),
+            ui_theme=str(data.get("ui_theme", "light")),
         )
 
 
@@ -248,8 +250,9 @@ class OverlaySaver:
         img = Image.new("RGB", (w, h), (20, 24, 33))
         draw = ImageDraw.Draw(img)
         title = "AutoWake"
-        subtitle = "이미지 파일을 찾을 수 없습니다."
-        detail = "설정에서 경로를 확인하세요."
+        subtitle = "이미지 불러오기를 실패했습니다."
+        detail = "해당 PC는 참고자료실 전용 도서 검색 PC입니다."
+        thanks = "오늘도 방문해주셔서 감사합니다."
         try:
             title_font = ImageFont.truetype("Segoe UI", 72)
             subtitle_font = ImageFont.truetype("Segoe UI", 36)
@@ -273,7 +276,8 @@ class OverlaySaver:
 
         draw_line((100, 180), title, title_font, (230, 230, 230))
         draw_line((100, 300), subtitle, subtitle_font, (200, 200, 200))
-        draw_line((100, 360), detail, detail_font, (170, 170, 170))
+        draw_line((100, 360), detail, detail_font, (190, 200, 220))
+        draw_line((100, 410), thanks, detail_font, (170, 180, 200))
         draw.rectangle([(100, 440), (1500, 444)], fill=(90, 98, 110))
         return img
 
@@ -378,23 +382,35 @@ class AutoWakeApp:
             except tk.TclError:
                 continue
 
-        colors = {
-            "bg": "#0f172a",
-            "card": "#111827",
-            "surface": "#1f2937",
-            "accent": "#38bdf8",
-            "text": "#e2e8f0",
-            "muted": "#94a3b8",
-            "border": "#334155",
-        }
+        theme_palette = cfg.ui_theme if cfg.ui_theme in ("light", "dark") else "light"
+        if theme_palette == "dark":
+            colors = {
+                "bg": "#0f172a",
+                "card": "#111827",
+                "surface": "#1f2937",
+                "accent": "#38bdf8",
+                "text": "#e2e8f0",
+                "muted": "#94a3b8",
+                "border": "#334155",
+            }
+        else:
+            colors = {
+                "bg": "#f8fafc",
+                "card": "#ffffff",
+                "surface": "#eef2ff",
+                "accent": "#6366f1",
+                "text": "#0f172a",
+                "muted": "#475569",
+                "border": "#cbd5f5",
+            }
 
         window.configure(background=colors["bg"])
         style.configure("TFrame", background=colors["bg"])
         style.configure("Card.TFrame", background=colors["card"])
         style.configure("Surface.TFrame", background=colors["surface"])
-        style.configure("TLabel", background=colors["bg"], foreground=colors["text"])
-        style.configure("Desc.TLabel", background=colors["bg"], foreground=colors["muted"])
-        style.configure("Header.TLabel", font=("Segoe UI", 16, "bold"), background=colors["bg"])
+        style.configure("TLabel", background=colors["surface"], foreground=colors["text"])
+        style.configure("Desc.TLabel", background=colors["surface"], foreground=colors["muted"])
+        style.configure("Header.TLabel", font=("Segoe UI", 16, "bold"), background=colors["card"])
         style.configure("Section.TLabelframe", padding=12, background=colors["surface"])
         style.configure(
             "Section.TLabelframe.Label",
@@ -420,19 +436,21 @@ class AutoWakeApp:
             "Primary.TButton",
             font=("Segoe UI", 10, "bold"),
             background=colors["accent"],
-            foreground="#0b1220",
+            foreground="#ffffff",
             padding=(14, 6),
+            borderwidth=0,
         )
         style.map(
             "Primary.TButton",
-            background=[("active", "#22d3ee"), ("pressed", "#0ea5e9")],
-            foreground=[("active", "#0b1220")],
+            background=[("active", "#818cf8"), ("pressed", "#4f46e5")],
+            foreground=[("active", "#ffffff")],
         )
         style.configure(
             "Ghost.TButton",
             background=colors["surface"],
             foreground=colors["text"],
             padding=(12, 6),
+            borderwidth=0,
         )
         style.map(
             "Ghost.TButton",
@@ -469,6 +487,7 @@ class AutoWakeApp:
             "chrome_kiosk": tk.BooleanVar(value=cfg.chrome_kiosk),
             "saver_enabled": tk.BooleanVar(value=cfg.saver_enabled),
             "chrome_repeat": tk.BooleanVar(value=cfg.chrome_repeat),
+            "ui_theme": tk.StringVar(value=theme_palette),
         }
 
         def apply_config():
@@ -486,6 +505,7 @@ class AutoWakeApp:
                 chrome_kiosk=vars_map["chrome_kiosk"].get(),
                 saver_enabled=vars_map["saver_enabled"].get(),
                 chrome_repeat=vars_map["chrome_repeat"].get(),
+                ui_theme=vars_map["ui_theme"].get(),
             )
             self.update_config(new_cfg)
 
@@ -513,6 +533,48 @@ class AutoWakeApp:
             if path:
                 vars_map["image_path"].set(path)
 
+        def import_config():
+            path = filedialog.askopenfilename(
+                title="설정 파일 불러오기",
+                filetypes=[("JSON files", "*.json")],
+            )
+            if not path:
+                return
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                imported = AppConfig.from_dict(data)
+                vars_map["url"].set(imported.url)
+                vars_map["image_path"].set(imported.image_path)
+                vars_map["idle_to_show_sec"].set(imported.idle_to_show_sec)
+                vars_map["active_threshold_sec"].set(imported.active_threshold_sec)
+                vars_map["poll_sec"].set(imported.poll_sec)
+                vars_map["chrome_relaunch_cooldown_sec"].set(
+                    imported.chrome_relaunch_cooldown_sec
+                )
+                vars_map["chrome_fullscreen"].set(imported.chrome_fullscreen)
+                vars_map["chrome_kiosk"].set(imported.chrome_kiosk)
+                vars_map["saver_enabled"].set(imported.saver_enabled)
+                vars_map["chrome_repeat"].set(imported.chrome_repeat)
+                vars_map["ui_theme"].set(imported.ui_theme)
+            except Exception as exc:
+                log(f"IMPORT config error: {exc}")
+
+        def export_config():
+            path = filedialog.asksaveasfilename(
+                title="설정 파일 저장",
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json")],
+                initialfile="autowake_config.json",
+            )
+            if not path:
+                return
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(asdict(self.cfg), f, ensure_ascii=False, indent=2)
+            except Exception as exc:
+                log(f"EXPORT config error: {exc}")
+
         general_box = ttk.Labelframe(
             tab_general, text="기본 정보", style="Section.TLabelframe"
         )
@@ -539,6 +601,20 @@ class AutoWakeApp:
             text="세이버에 표시할 이미지 파일을 선택합니다.",
             style="Desc.TLabel",
         ).grid(row=3, column=1, columnspan=2, sticky="w")
+        ttk.Label(general_box, text="테마").grid(row=4, column=0, sticky="w")
+        theme_select = ttk.Combobox(
+            general_box,
+            textvariable=vars_map["ui_theme"],
+            values=["light", "dark"],
+            state="readonly",
+            width=12,
+        )
+        theme_select.grid(row=4, column=1, sticky="w", pady=4)
+        ttk.Label(
+            general_box,
+            text="설정 UI 색감을 선택하세요.",
+            style="Desc.TLabel",
+        ).grid(row=5, column=1, columnspan=2, sticky="w", pady=(0, 6))
         general_box.columnconfigure(1, weight=1)
 
         saver_box = ttk.Labelframe(
@@ -628,6 +704,7 @@ class AutoWakeApp:
             vars_map["chrome_kiosk"].set(defaults.chrome_kiosk)
             vars_map["saver_enabled"].set(defaults.saver_enabled)
             vars_map["chrome_repeat"].set(defaults.chrome_repeat)
+            vars_map["ui_theme"].set(defaults.ui_theme)
 
         def open_work_dir():
             try:
@@ -635,15 +712,36 @@ class AutoWakeApp:
             except Exception as e:
                 log(f"OPEN work dir error: {e}")
 
-        ttk.Button(footer, text="기본값 복원", command=restore_defaults, style="Ghost.TButton").pack(
-            side="left"
-        )
-        ttk.Button(footer, text="작업 폴더 열기", command=open_work_dir, style="Ghost.TButton").pack(
-            side="left", padx=6
-        )
-        ttk.Button(footer, text="닫기", command=window.destroy, style="Primary.TButton").pack(
-            side="right"
-        )
+        ttk.Button(
+            footer,
+            text="기본값 복원",
+            command=restore_defaults,
+            style="Ghost.TButton",
+        ).pack(side="left")
+        ttk.Button(
+            footer,
+            text="설정 파일 위치",
+            command=open_work_dir,
+            style="Ghost.TButton",
+        ).pack(side="left", padx=6)
+        ttk.Button(
+            footer,
+            text="불러오기",
+            command=import_config,
+            style="Ghost.TButton",
+        ).pack(side="left")
+        ttk.Button(
+            footer,
+            text="내보내기",
+            command=export_config,
+            style="Ghost.TButton",
+        ).pack(side="left", padx=6)
+        ttk.Button(
+            footer,
+            text="닫기",
+            command=window.destroy,
+            style="Primary.TButton",
+        ).pack(side="right")
 
     def _exit_app(self, icon=None, item=None):
         self.stop()
