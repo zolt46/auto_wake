@@ -580,6 +580,14 @@ class AutoWakeApp:
         notebook.add(tab_saver, text="세이버")
         notebook.add(tab_chrome, text="크롬")
 
+        def browse_image():
+            path = filedialog.askopenfilename(
+                title="이미지 파일 선택",
+                filetypes=[("Image files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif")],
+            )
+            if path:
+                vars_map["image_path"].set(path)
+
         def import_config():
             path = filedialog.askopenfilename(
                 title="설정 파일 불러오기",
@@ -664,29 +672,44 @@ class AutoWakeApp:
         ttk.Label(saver_box, text="이미지 소스").grid(row=1, column=0, sticky="w")
         ttk.Radiobutton(
             saver_box,
+            text="사용자 이미지 경로",
+            variable=vars_map["saver_image_mode"],
+            value="path",
+        ).grid(row=1, column=1, sticky="w")
+        ttk.Label(saver_box, text="사용자 이미지 경로").grid(
+            row=2, column=0, sticky="w"
+        )
+        ttk.Entry(
+            saver_box, textvariable=vars_map["image_path"], width=44
+        ).grid(row=2, column=1, sticky="ew", pady=4)
+        ttk.Button(saver_box, text="찾기", command=browse_image).grid(
+            row=2, column=2, padx=6
+        )
+        ttk.Radiobutton(
+            saver_box,
             text="패키징 기본 이미지",
             variable=vars_map["saver_image_mode"],
             value="bundled",
-        ).grid(row=1, column=1, sticky="w")
+        ).grid(row=3, column=1, sticky="w")
         ttk.Radiobutton(
             saver_box,
-            text="안내 문구 기본 이미지",
+            text="에러 안내 이미지",
             variable=vars_map["saver_image_mode"],
             value="generated",
-        ).grid(row=2, column=1, sticky="w")
+        ).grid(row=4, column=1, sticky="w")
         ttk.Label(saver_box, text="패키징 이미지 경로").grid(
-            row=3, column=0, sticky="w"
+            row=5, column=0, sticky="w"
         )
         ttk.Entry(
             saver_box, textvariable=vars_map["bundled_image_path"], width=44
-        ).grid(row=3, column=1, sticky="ew", pady=4)
+        ).grid(row=5, column=1, sticky="ew", pady=4)
         ttk.Label(
             saver_box,
             text="assets 폴더에 넣은 기본 이미지를 지정합니다.",
             style="Desc.TLabel",
-        ).grid(row=4, column=1, columnspan=2, sticky="w")
+        ).grid(row=6, column=1, columnspan=2, sticky="w")
         ttk.Label(saver_box, text="세이버 표시 대기(초)").grid(
-            row=5, column=0, sticky="w"
+            row=7, column=0, sticky="w"
         )
         ttk.Spinbox(
             saver_box,
@@ -694,9 +717,9 @@ class AutoWakeApp:
             to=3600,
             textvariable=vars_map["idle_to_show_sec"],
             width=10,
-        ).grid(row=5, column=1, sticky="w", pady=4)
+        ).grid(row=7, column=1, sticky="w", pady=4)
         ttk.Label(saver_box, text="활동 감지 임계(초)").grid(
-            row=6, column=0, sticky="w"
+            row=8, column=0, sticky="w"
         )
         ttk.Spinbox(
             saver_box,
@@ -705,9 +728,9 @@ class AutoWakeApp:
             increment=0.1,
             textvariable=vars_map["active_threshold_sec"],
             width=10,
-        ).grid(row=6, column=1, sticky="w", pady=4)
+        ).grid(row=8, column=1, sticky="w", pady=4)
         ttk.Label(saver_box, text="루프 주기(초)").grid(
-            row=7, column=0, sticky="w"
+            row=9, column=0, sticky="w"
         )
         ttk.Spinbox(
             saver_box,
@@ -716,7 +739,7 @@ class AutoWakeApp:
             increment=0.1,
             textvariable=vars_map["poll_sec"],
             width=10,
-        ).grid(row=7, column=1, sticky="w", pady=4)
+        ).grid(row=9, column=1, sticky="w", pady=4)
         saver_box.columnconfigure(1, weight=1)
 
         chrome_box = ttk.Labelframe(
