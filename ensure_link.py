@@ -82,7 +82,7 @@ class AppConfig:
     saver_enabled: bool = True
     chrome_repeat: bool = True
     ui_theme: str = "light"
-    saver_image_mode: str = "path"
+    saver_image_mode: str = "bundled"
     bundled_image_path: str = DEFAULT_BUNDLED_IMAGE
 
     @classmethod
@@ -102,7 +102,7 @@ class AppConfig:
             saver_enabled=bool(data.get("saver_enabled", True)),
             chrome_repeat=bool(data.get("chrome_repeat", True)),
             ui_theme=str(data.get("ui_theme", "light")),
-            saver_image_mode=str(data.get("saver_image_mode", "path")),
+            saver_image_mode=str(data.get("saver_image_mode", "bundled")),
             bundled_image_path=str(
                 data.get("bundled_image_path", DEFAULT_BUNDLED_IMAGE)
             ),
@@ -148,6 +148,19 @@ def find_chrome_exe() -> str:
         if os.path.exists(p):
             return p
     return "chrome"
+
+def is_chrome_running() -> bool:
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq chrome.exe"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return "chrome.exe" in result.stdout.lower()
+    except Exception as exc:
+        log(f"CHECK chrome running error: {exc}")
+        return False
 
 
 def launch_fullscreen_site(cfg: AppConfig) -> subprocess.Popen | None:
@@ -367,9 +380,12 @@ class AutoWakeApp:
             if self._full_proc is None or self._full_proc.poll() is not None:
                 now = time.time()
                 if now - self._last_full_launch_ts >= cfg.chrome_relaunch_cooldown_sec:
-                    log("FULL chrome not running -> relaunch")
-                    self._full_proc = launch_fullscreen_site(cfg)
-                    self._last_full_launch_ts = now
+                    if is_chrome_running():
+                        log("Chrome is already running; skip relaunch")
+                    else:
+                        log("FULL chrome not running -> relaunch")
+                        self._full_proc = launch_fullscreen_site(cfg)
+                        self._last_full_launch_ts = now
 
         idle = seconds_since_last_input()
         if cfg.saver_enabled:
@@ -564,14 +580,6 @@ class AutoWakeApp:
         notebook.add(tab_saver, text="세이버")
         notebook.add(tab_chrome, text="크롬")
 
-        def browse_image():
-            path = filedialog.askopenfilename(
-                title="이미지 파일 선택",
-                filetypes=[("Image files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif")],
-            )
-            if path:
-                vars_map["image_path"].set(path)
-
         def import_config():
             path = filedialog.askopenfilename(
                 title="설정 파일 불러오기",
@@ -630,19 +638,7 @@ class AutoWakeApp:
             style="Desc.TLabel",
         ).grid(row=1, column=1, columnspan=2, sticky="w", pady=(0, 6))
 
-        ttk.Label(general_box, text="이미지 파일 경로").grid(row=2, column=0, sticky="w")
-        ttk.Entry(general_box, textvariable=vars_map["image_path"], width=60).grid(
-            row=2, column=1, sticky="ew", pady=4
-        )
-        ttk.Button(general_box, text="찾기", command=browse_image).grid(
-            row=2, column=2, padx=6
-        )
-        ttk.Label(
-            general_box,
-            text="세이버에 표시할 이미지 파일을 선택합니다.",
-            style="Desc.TLabel",
-        ).grid(row=3, column=1, columnspan=2, sticky="w")
-        ttk.Label(general_box, text="테마").grid(row=4, column=0, sticky="w")
+        ttk.Label(general_box, text="테마").grid(row=2, column=0, sticky="w")
         theme_select = ttk.Combobox(
             general_box,
             textvariable=vars_map["ui_theme"],
@@ -650,12 +646,12 @@ class AutoWakeApp:
             state="readonly",
             width=12,
         )
-        theme_select.grid(row=4, column=1, sticky="w", pady=4)
+        theme_select.grid(row=2, column=1, sticky="w", pady=4)
         ttk.Label(
             general_box,
             text="설정 UI 색감을 선택하세요.",
             style="Desc.TLabel",
-        ).grid(row=5, column=1, columnspan=2, sticky="w", pady=(0, 6))
+        ).grid(row=3, column=1, columnspan=2, sticky="w", pady=(0, 6))
         general_box.columnconfigure(1, weight=1)
 
         saver_box = ttk.Labelframe(
@@ -668,35 +664,29 @@ class AutoWakeApp:
         ttk.Label(saver_box, text="이미지 소스").grid(row=1, column=0, sticky="w")
         ttk.Radiobutton(
             saver_box,
-            text="경로 지정",
-            variable=vars_map["saver_image_mode"],
-            value="path",
-        ).grid(row=1, column=1, sticky="w")
-        ttk.Radiobutton(
-            saver_box,
             text="패키징 기본 이미지",
             variable=vars_map["saver_image_mode"],
             value="bundled",
-        ).grid(row=2, column=1, sticky="w")
+        ).grid(row=1, column=1, sticky="w")
         ttk.Radiobutton(
             saver_box,
             text="안내 문구 기본 이미지",
             variable=vars_map["saver_image_mode"],
             value="generated",
-        ).grid(row=3, column=1, sticky="w")
+        ).grid(row=2, column=1, sticky="w")
         ttk.Label(saver_box, text="패키징 이미지 경로").grid(
-            row=4, column=0, sticky="w"
+            row=3, column=0, sticky="w"
         )
         ttk.Entry(
             saver_box, textvariable=vars_map["bundled_image_path"], width=44
-        ).grid(row=4, column=1, sticky="ew", pady=4)
+        ).grid(row=3, column=1, sticky="ew", pady=4)
         ttk.Label(
             saver_box,
             text="assets 폴더에 넣은 기본 이미지를 지정합니다.",
             style="Desc.TLabel",
-        ).grid(row=5, column=1, columnspan=2, sticky="w")
+        ).grid(row=4, column=1, columnspan=2, sticky="w")
         ttk.Label(saver_box, text="세이버 표시 대기(초)").grid(
-            row=6, column=0, sticky="w"
+            row=5, column=0, sticky="w"
         )
         ttk.Spinbox(
             saver_box,
@@ -704,9 +694,9 @@ class AutoWakeApp:
             to=3600,
             textvariable=vars_map["idle_to_show_sec"],
             width=10,
-        ).grid(row=6, column=1, sticky="w", pady=4)
+        ).grid(row=5, column=1, sticky="w", pady=4)
         ttk.Label(saver_box, text="활동 감지 임계(초)").grid(
-            row=7, column=0, sticky="w"
+            row=6, column=0, sticky="w"
         )
         ttk.Spinbox(
             saver_box,
@@ -715,9 +705,9 @@ class AutoWakeApp:
             increment=0.1,
             textvariable=vars_map["active_threshold_sec"],
             width=10,
-        ).grid(row=7, column=1, sticky="w", pady=4)
+        ).grid(row=6, column=1, sticky="w", pady=4)
         ttk.Label(saver_box, text="루프 주기(초)").grid(
-            row=8, column=0, sticky="w"
+            row=7, column=0, sticky="w"
         )
         ttk.Spinbox(
             saver_box,
@@ -726,7 +716,7 @@ class AutoWakeApp:
             increment=0.1,
             textvariable=vars_map["poll_sec"],
             width=10,
-        ).grid(row=8, column=1, sticky="w", pady=4)
+        ).grid(row=7, column=1, sticky="w", pady=4)
         saver_box.columnconfigure(1, weight=1)
 
         chrome_box = ttk.Labelframe(
