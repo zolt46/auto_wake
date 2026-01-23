@@ -22,9 +22,7 @@ DEFAULT_LOCAL_IMAGE = (
 
 WORK_DIR = r"C:\AutoWake"
 CONFIG_FILE = os.path.join(WORK_DIR, "config.json")
-DEFAULT_BUNDLED_IMAGE = os.path.join(
-    os.path.dirname(__file__), "assets", "default_saver.png"
-)
+DEFAULT_BUNDLED_IMAGE = os.path.join("assets", "default_saver.png")
 
 CHROME_CANDIDATES = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -66,6 +64,72 @@ def log(msg: str):
     p = os.path.join(WORK_DIR, "autowake.log")
     with open(p, "a", encoding="utf-8") as f:
         f.write(f"{datetime.now()} - {msg}\n")
+
+def resource_path(relative_path: str) -> str:
+    base_path = getattr(sys, "_MEIPASS", os.path.dirname(__file__))
+    return os.path.join(base_path, relative_path)
+
+
+@dataclass
+class AppConfig:
+    url: str = DEFAULT_URL
+    image_path: str = DEFAULT_LOCAL_IMAGE
+    work_dir: str = WORK_DIR
+    idle_to_show_sec: float = 10.0
+    active_threshold_sec: float = 1.0
+    poll_sec: float = 0.5
+    chrome_relaunch_cooldown_sec: float = 10.0
+    chrome_fullscreen: bool = True
+    chrome_kiosk: bool = False
+    saver_enabled: bool = True
+    chrome_repeat: bool = True
+    ui_theme: str = "light"
+    saver_image_mode: str = "bundled"
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "AppConfig":
+        return cls(
+            url=data.get("url", DEFAULT_URL),
+            image_path=data.get("image_path", DEFAULT_LOCAL_IMAGE),
+            work_dir=data.get("work_dir", WORK_DIR),
+            idle_to_show_sec=float(data.get("idle_to_show_sec", 10.0)),
+            active_threshold_sec=float(data.get("active_threshold_sec", 1.0)),
+            poll_sec=float(data.get("poll_sec", 0.5)),
+            chrome_relaunch_cooldown_sec=float(
+                data.get("chrome_relaunch_cooldown_sec", 10.0)
+            ),
+            chrome_fullscreen=bool(data.get("chrome_fullscreen", True)),
+            chrome_kiosk=bool(data.get("chrome_kiosk", False)),
+            saver_enabled=bool(data.get("saver_enabled", True)),
+            chrome_repeat=bool(data.get("chrome_repeat", True)),
+            ui_theme=str(data.get("ui_theme", "light")),
+            saver_image_mode=str(data.get("saver_image_mode", "bundled")),
+        )
+
+
+def load_config() -> AppConfig:
+    os.makedirs(WORK_DIR, exist_ok=True)
+    if not os.path.exists(CONFIG_FILE):
+        cfg = AppConfig()
+        save_config(cfg)
+        return cfg
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return AppConfig.from_dict(data)
+    except Exception as e:
+        log(f"CONFIG load error: {e}")
+        return AppConfig()
+
+
+def save_config(cfg: AppConfig) -> None:
+    os.makedirs(WORK_DIR, exist_ok=True)
+    data = asdict(cfg)
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log(f"CONFIG save error: {e}")
 
 
 @dataclass
@@ -199,12 +263,10 @@ class OverlaySaver:
         root: tk.Tk,
         image_path: str,
         image_mode: str,
-        bundled_image_path: str,
     ):
         self.root = root
         self.image_path = image_path
         self.image_mode = image_mode
-        self.bundled_image_path = bundled_image_path
         self.window = None
         self.visible = False
         self.tk_img = None
@@ -243,7 +305,7 @@ class OverlaySaver:
             return self._build_fallback_image()
         if mode == "bundled":
             return self._load_image_or_fallback(
-                self.bundled_image_path, "BUNDLED_IMAGE"
+                resource_path(DEFAULT_BUNDLED_IMAGE), "BUNDLED_IMAGE"
             )
         return self._load_image_or_fallback(self.image_path, "LOCAL_IMAGE")
 
@@ -335,7 +397,6 @@ class AutoWakeApp:
             self.root,
             self.cfg.image_path,
             self.cfg.saver_image_mode,
-            self.cfg.bundled_image_path,
         )
         self._icon = None
         self._settings_window = None
@@ -357,7 +418,6 @@ class AutoWakeApp:
         self.cfg = new_cfg
         self._saver.image_path = new_cfg.image_path
         self._saver.image_mode = new_cfg.saver_image_mode
-        self._saver.bundled_image_path = new_cfg.bundled_image_path
         save_config(new_cfg)
 
     def _schedule_tick(self):
@@ -540,7 +600,6 @@ class AutoWakeApp:
             "chrome_repeat": tk.BooleanVar(value=cfg.chrome_repeat),
             "ui_theme": tk.StringVar(value=theme_palette),
             "saver_image_mode": tk.StringVar(value=cfg.saver_image_mode),
-            "bundled_image_path": tk.StringVar(value=cfg.bundled_image_path),
         }
 
         def apply_config():
@@ -560,7 +619,6 @@ class AutoWakeApp:
                 chrome_repeat=vars_map["chrome_repeat"].get(),
                 ui_theme=vars_map["ui_theme"].get(),
                 saver_image_mode=vars_map["saver_image_mode"].get(),
-                bundled_image_path=vars_map["bundled_image_path"].get(),
             )
             self.update_config(new_cfg)
 
@@ -613,7 +671,6 @@ class AutoWakeApp:
                 vars_map["chrome_repeat"].set(imported.chrome_repeat)
                 vars_map["ui_theme"].set(imported.ui_theme)
                 vars_map["saver_image_mode"].set(imported.saver_image_mode)
-                vars_map["bundled_image_path"].set(imported.bundled_image_path)
             except Exception as exc:
                 log(f"IMPORT config error: {exc}")
 
@@ -697,19 +754,8 @@ class AutoWakeApp:
             variable=vars_map["saver_image_mode"],
             value="generated",
         ).grid(row=4, column=1, sticky="w")
-        ttk.Label(saver_box, text="패키징 이미지 경로").grid(
-            row=5, column=0, sticky="w"
-        )
-        ttk.Entry(
-            saver_box, textvariable=vars_map["bundled_image_path"], width=44
-        ).grid(row=5, column=1, sticky="ew", pady=4)
-        ttk.Label(
-            saver_box,
-            text="assets 폴더에 넣은 기본 이미지를 지정합니다.",
-            style="Desc.TLabel",
-        ).grid(row=6, column=1, columnspan=2, sticky="w")
         ttk.Label(saver_box, text="세이버 표시 대기(초)").grid(
-            row=7, column=0, sticky="w"
+            row=5, column=0, sticky="w"
         )
         ttk.Spinbox(
             saver_box,
@@ -717,9 +763,9 @@ class AutoWakeApp:
             to=3600,
             textvariable=vars_map["idle_to_show_sec"],
             width=10,
-        ).grid(row=7, column=1, sticky="w", pady=4)
+        ).grid(row=5, column=1, sticky="w", pady=4)
         ttk.Label(saver_box, text="활동 감지 임계(초)").grid(
-            row=8, column=0, sticky="w"
+            row=6, column=0, sticky="w"
         )
         ttk.Spinbox(
             saver_box,
@@ -728,9 +774,9 @@ class AutoWakeApp:
             increment=0.1,
             textvariable=vars_map["active_threshold_sec"],
             width=10,
-        ).grid(row=8, column=1, sticky="w", pady=4)
+        ).grid(row=6, column=1, sticky="w", pady=4)
         ttk.Label(saver_box, text="루프 주기(초)").grid(
-            row=9, column=0, sticky="w"
+            row=7, column=0, sticky="w"
         )
         ttk.Spinbox(
             saver_box,
@@ -739,7 +785,7 @@ class AutoWakeApp:
             increment=0.1,
             textvariable=vars_map["poll_sec"],
             width=10,
-        ).grid(row=9, column=1, sticky="w", pady=4)
+        ).grid(row=7, column=1, sticky="w", pady=4)
         saver_box.columnconfigure(1, weight=1)
 
         chrome_box = ttk.Labelframe(
@@ -791,7 +837,6 @@ class AutoWakeApp:
             vars_map["chrome_repeat"].set(defaults.chrome_repeat)
             vars_map["ui_theme"].set(defaults.ui_theme)
             vars_map["saver_image_mode"].set(defaults.saver_image_mode)
-            vars_map["bundled_image_path"].set(defaults.bundled_image_path)
 
         def open_work_dir():
             try:
