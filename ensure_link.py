@@ -132,72 +132,6 @@ def save_config(cfg: AppConfig) -> None:
         log(f"CONFIG save error: {e}")
 
 
-@dataclass
-class AppConfig:
-    url: str = DEFAULT_URL
-    image_path: str = DEFAULT_LOCAL_IMAGE
-    work_dir: str = WORK_DIR
-    idle_to_show_sec: float = 10.0
-    active_threshold_sec: float = 1.0
-    poll_sec: float = 0.5
-    chrome_relaunch_cooldown_sec: float = 10.0
-    chrome_fullscreen: bool = True
-    chrome_kiosk: bool = False
-    saver_enabled: bool = True
-    chrome_repeat: bool = True
-    ui_theme: str = "light"
-    saver_image_mode: str = "bundled"
-    bundled_image_path: str = DEFAULT_BUNDLED_IMAGE
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "AppConfig":
-        return cls(
-            url=data.get("url", DEFAULT_URL),
-            image_path=data.get("image_path", DEFAULT_LOCAL_IMAGE),
-            work_dir=data.get("work_dir", WORK_DIR),
-            idle_to_show_sec=float(data.get("idle_to_show_sec", 10.0)),
-            active_threshold_sec=float(data.get("active_threshold_sec", 1.0)),
-            poll_sec=float(data.get("poll_sec", 0.5)),
-            chrome_relaunch_cooldown_sec=float(
-                data.get("chrome_relaunch_cooldown_sec", 10.0)
-            ),
-            chrome_fullscreen=bool(data.get("chrome_fullscreen", True)),
-            chrome_kiosk=bool(data.get("chrome_kiosk", False)),
-            saver_enabled=bool(data.get("saver_enabled", True)),
-            chrome_repeat=bool(data.get("chrome_repeat", True)),
-            ui_theme=str(data.get("ui_theme", "light")),
-            saver_image_mode=str(data.get("saver_image_mode", "bundled")),
-            bundled_image_path=str(
-                data.get("bundled_image_path", DEFAULT_BUNDLED_IMAGE)
-            ),
-        )
-
-
-def load_config() -> AppConfig:
-    os.makedirs(WORK_DIR, exist_ok=True)
-    if not os.path.exists(CONFIG_FILE):
-        cfg = AppConfig()
-        save_config(cfg)
-        return cfg
-    try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return AppConfig.from_dict(data)
-    except Exception as e:
-        log(f"CONFIG load error: {e}")
-        return AppConfig()
-
-
-def save_config(cfg: AppConfig) -> None:
-    os.makedirs(WORK_DIR, exist_ok=True)
-    data = asdict(cfg)
-    try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        log(f"CONFIG save error: {e}")
-
-
 def seconds_since_last_input() -> float:
     info = LASTINPUTINFO()
     info.cbSize = ctypes.sizeof(LASTINPUTINFO)
@@ -215,11 +149,13 @@ def find_chrome_exe() -> str:
 
 def is_chrome_running() -> bool:
     try:
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         result = subprocess.run(
             ["tasklist", "/FI", "IMAGENAME eq chrome.exe"],
             capture_output=True,
             text=True,
             check=False,
+            creationflags=creationflags,
         )
         return "chrome.exe" in result.stdout.lower()
     except Exception as exc:
