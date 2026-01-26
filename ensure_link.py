@@ -101,7 +101,7 @@ class AppConfig:
     target_refocus_interval_sec: float = 3.0
     saver_start_delay_sec: float = 1.0
     notice_enabled: bool = True
-    admin_password: str = ""
+    admin_password: str = "0000"
     accent_theme: str = "sky"
 
     @classmethod
@@ -146,7 +146,7 @@ class AppConfig:
             ),
             saver_start_delay_sec=float(data.get("saver_start_delay_sec", 1.0)),
             notice_enabled=bool(data.get("notice_enabled", True)),
-            admin_password=str(data.get("admin_password", "")),
+            admin_password=str(data.get("admin_password", "0000")),
             accent_theme=str(data.get("accent_theme", "sky")),
         )
 
@@ -185,23 +185,41 @@ def build_palette(theme: str, accent_theme: str) -> dict:
         "amber": ("#f59e0b", "#fbbf24"),
         "teal": ("#14b8a6", "#2dd4bf"),
         "violet": ("#8b5cf6", "#a78bfa"),
+        "lime": ("#84cc16", "#a3e635"),
+        "cyan": ("#06b6d4", "#22d3ee"),
+        "pink": ("#ec4899", "#f472b6"),
     }
     accent, accent_soft = accents.get(accent_theme, accents["sky"])
     if theme == "dark":
+        background_variants = {
+            "sky": ("#101a2b", "#1c2a3f", "#233248", "#1c2a3f", "#182233"),
+            "indigo": ("#14172b", "#202549", "#2a2f57", "#202549", "#1a1f3f"),
+            "emerald": ("#0f1f1a", "#183028", "#1f3a30", "#183028", "#14261f"),
+            "rose": ("#2a1419", "#3b1f25", "#45262d", "#3b1f25", "#2f1a1f"),
+            "amber": ("#2a1c10", "#3b2a1b", "#453122", "#3b2a1b", "#2f2116"),
+            "teal": ("#102421", "#18332f", "#1f3d38", "#18332f", "#152b27"),
+            "violet": ("#1d142b", "#2a1f3b", "#332645", "#2a1f3b", "#221a2f"),
+            "lime": ("#1b2411", "#2a3420", "#324026", "#2a3420", "#212b17"),
+            "cyan": ("#0f2428", "#19323a", "#203d45", "#19323a", "#162b32"),
+            "pink": ("#2a1423", "#3a1f30", "#44263a", "#3a1f30", "#2f1a27"),
+        }
+        bg, card, card_alt, topbar, tab_bg = background_variants.get(
+            accent_theme, background_variants["sky"]
+        )
         return {
-            "bg": "#111827",
-            "bg_card": "#1f2937",
-            "bg_card_alt": "#273449",
+            "bg": bg,
+            "bg_card": card,
+            "bg_card_alt": card_alt,
             "accent": accent,
             "accent_soft": accent_soft,
             "text_primary": "#f9fafb",
             "text_muted": "#d1d5db",
             "border": "#334155",
             "bg_dark": "#0b1220",
-            "tab_bg": "#111827",
-            "tab_active": "#1f2937",
+            "tab_bg": tab_bg,
+            "tab_active": card,
             "tab_text": "#e5e7eb",
-            "topbar": "#1f2937",
+            "topbar": topbar,
         }
     return {
         "bg": "#f1f5f9",
@@ -361,6 +379,37 @@ class PasswordDialog(QtWidgets.QDialog):
         buttons.addWidget(ok)
         layout.addLayout(buttons)
 
+
+class PasswordChangeDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("비밀번호 변경")
+        self.setModal(True)
+        self.setFixedSize(360, 220)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(QtWidgets.QLabel("현재 비밀번호와 새 비밀번호를 입력하세요."))
+
+        form = QtWidgets.QFormLayout()
+        self.current_password = QtWidgets.QLineEdit()
+        self.current_password.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.new_password = QtWidgets.QLineEdit()
+        self.new_password.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.confirm_password = QtWidgets.QLineEdit()
+        self.confirm_password.setEchoMode(QtWidgets.QLineEdit.Password)
+        form.addRow("현재 비밀번호", self.current_password)
+        form.addRow("새 비밀번호", self.new_password)
+        form.addRow("비밀번호 확인", self.confirm_password)
+        layout.addLayout(form)
+
+        buttons = QtWidgets.QHBoxLayout()
+        cancel = QtWidgets.QPushButton("취소")
+        ok = QtWidgets.QPushButton("변경")
+        cancel.clicked.connect(self.reject)
+        ok.clicked.connect(self.accept)
+        buttons.addStretch()
+        buttons.addWidget(cancel)
+        buttons.addWidget(ok)
+        layout.addLayout(buttons)
 
 class NoticeWindow(QtWidgets.QWidget):
     def __init__(self, palette: dict, parent=None):
@@ -530,7 +579,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_quit: Optional[QtGui.QAction] = None
         self._build_ui()
         self._apply_palette()
+        self._loading = False
         self._load_config_to_ui()
+        self._connect_autosave()
         self._setup_tray()
 
     def _apply_palette(self):
@@ -580,8 +631,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: {palette['text_muted']};
             }}
             QPushButton#GhostButton {{
-                background: {palette['bg_card_alt']};
-                color: {palette['text_primary']};
+                background: {palette['accent']};
+                color: #0b1220;
             }}
             QPushButton#StartButton {{
                 background: {palette['accent']};
@@ -656,7 +707,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_ui(self):
         self.setWindowTitle("AutoWake")
-        self.resize(760, 600)
+        self.resize(700, 580)
+        self.setMinimumSize(660, 560)
         central = QtWidgets.QWidget()
         main_layout = QtWidgets.QVBoxLayout(central)
         main_layout.setContentsMargins(12, 12, 12, 12)
@@ -680,7 +732,7 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row = QtWidgets.QHBoxLayout()
         button_row.addWidget(self.start_button)
         button_row.addWidget(self.stop_button)
-        self.state_label = QtWidgets.QLabel("상태: 중지됨")
+        self.state_label = QtWidgets.QLabel("● 상태: 중지됨")
         self.state_label.setObjectName("StatePill")
         self.state_label.setAlignment(QtCore.Qt.AlignRight)
         right_box = QtWidgets.QVBoxLayout()
@@ -692,6 +744,8 @@ class MainWindow(QtWidgets.QMainWindow):
         tabs = QtWidgets.QTabWidget()
         tabs.setDocumentMode(True)
         tabs.setMovable(False)
+        tabs.setUsesScrollButtons(True)
+        tabs.setElideMode(QtCore.Qt.ElideRight)
 
         self.audio_card = FancyCard(
             "음원 창",
@@ -800,7 +854,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.saver_mode.addItems(["bundled", "path", "generated"])
         self.saver_image_path = QtWidgets.QLineEdit()
         browse = QtWidgets.QPushButton("찾기")
-        browse.setObjectName("GhostButton")
         browse.clicked.connect(self._browse_image)
         image_row = QtWidgets.QHBoxLayout()
         image_row.addWidget(self.saver_image_path)
@@ -833,36 +886,28 @@ class MainWindow(QtWidgets.QMainWindow):
 
         form = QtWidgets.QFormLayout()
         self.accent_theme = QtWidgets.QComboBox()
-        self.accent_theme.addItems(["sky", "indigo", "emerald", "rose", "amber", "teal", "violet"])
-        self.admin_password = QtWidgets.QLineEdit()
-        self.admin_password.setEchoMode(QtWidgets.QLineEdit.Password)
-        self.admin_password_confirm = QtWidgets.QLineEdit()
-        self.admin_password_confirm.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.accent_theme.addItems(
+            ["sky", "indigo", "emerald", "rose", "amber", "teal", "violet", "lime", "cyan", "pink"]
+        )
         self.chrome_relaunch_cooldown = QtWidgets.QDoubleSpinBox()
         self.chrome_relaunch_cooldown.setRange(1.0, 600.0)
         self.chrome_relaunch_cooldown.setSingleStep(1.0)
         form.addRow(self._label("강조 색상"), self.accent_theme)
         form.addRow(self._label("공통 쿨다운(초)"), self.chrome_relaunch_cooldown)
-        form.addRow(self._label("관리자 비밀번호"), self.admin_password)
-        form.addRow(self._label("비밀번호 확인"), self.admin_password_confirm)
         layout.addLayout(form)
 
         path_row = QtWidgets.QHBoxLayout()
         self.config_path = QtWidgets.QLineEdit()
         self.config_path.setReadOnly(True)
         open_button = QtWidgets.QPushButton("설정 폴더 열기")
-        open_button.setObjectName("GhostButton")
         open_button.clicked.connect(self._open_work_dir)
         path_row.addWidget(self.config_path)
         path_row.addWidget(open_button)
         layout.addLayout(path_row)
 
-        buttons = QtWidgets.QHBoxLayout()
-        save_button = QtWidgets.QPushButton("설정 저장")
-        save_button.clicked.connect(self._save_config)
-        buttons.addWidget(save_button)
-        buttons.addStretch()
-        layout.addLayout(buttons)
+        self.change_password_button = QtWidgets.QPushButton("비밀번호 변경")
+        self.change_password_button.clicked.connect(self._change_password)
+        layout.addWidget(self.change_password_button)
 
     def _browse_image(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -873,12 +918,32 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         if path:
             self.saver_image_path.setText(path)
+            self._autosave()
 
     def _open_work_dir(self):
         try:
             os.startfile(self.cfg.work_dir)
         except Exception as exc:
             log(f"OPEN work dir error: {exc}")
+
+    def _change_password(self):
+        dialog = PasswordChangeDialog(self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        current = dialog.current_password.text()
+        new_password = dialog.new_password.text()
+        confirm = dialog.confirm_password.text()
+        if current != self.cfg.admin_password:
+            QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "현재 비밀번호가 올바르지 않습니다.")
+            return
+        if not new_password:
+            QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "새 비밀번호를 입력하세요.")
+            return
+        if new_password != confirm:
+            QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호 확인이 일치하지 않습니다.")
+            return
+        self.cfg.admin_password = new_password
+        save_config(self.cfg)
 
     def _build_tray_icon(self) -> QtGui.QIcon:
         size = 64
@@ -935,6 +1000,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호가 일치하지 않습니다.")
                 return
         self.showNormal()
+        self.resize(self.minimumSize())
         self.raise_()
         self.activateWindow()
 
@@ -949,6 +1015,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.hide()
 
     def _load_config_to_ui(self):
+        self._loading = True
         cfg = self.cfg
         self.audio_enabled.setChecked(cfg.audio_enabled)
         self.audio_url.setText(cfg.audio_url)
@@ -974,14 +1041,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.notice_enabled.setChecked(cfg.notice_enabled)
         self.accent_theme.setCurrentText(cfg.accent_theme)
         self.chrome_relaunch_cooldown.setValue(cfg.chrome_relaunch_cooldown_sec)
-        self.admin_password.setText(cfg.admin_password)
-        self.admin_password_confirm.setText(cfg.admin_password)
         self.config_path.setText(cfg.work_dir)
         self._update_run_state_labels()
+        self._loading = False
 
     def _gather_config(self) -> AppConfig:
         target_mode = self.target_mode.currentText()
-        password = self.admin_password.text()
         cfg = AppConfig(
             url=self.target_url.text(),
             image_path=self.saver_image_path.text(),
@@ -1008,18 +1073,56 @@ class MainWindow(QtWidgets.QMainWindow):
             target_refocus_interval_sec=self.target_refocus_interval.value(),
             saver_start_delay_sec=self.saver_start_delay.value(),
             notice_enabled=self.notice_enabled.isChecked(),
-            admin_password=password,
+            admin_password=self.cfg.admin_password,
             accent_theme=self.accent_theme.currentText(),
         )
         return cfg
 
     def _save_config(self):
-        if self.admin_password.text() != self.admin_password_confirm.text():
-            QtWidgets.QMessageBox.warning(self, "비밀번호 확인", "비밀번호가 일치하지 않습니다.")
-            return
         self.cfg = self._gather_config()
         save_config(self.cfg)
         self._apply_palette()
+
+    def _connect_autosave(self):
+        widgets = [
+            self.audio_enabled,
+            self.target_enabled,
+            self.saver_enabled,
+            self.notice_enabled,
+        ]
+        for widget in widgets:
+            widget.toggled.connect(self._autosave)
+        for widget in [
+            self.audio_url,
+            self.saver_image_path,
+            self.target_url,
+        ]:
+            widget.textEdited.connect(self._autosave)
+        for widget in [
+            self.audio_mode,
+            self.target_mode,
+            self.saver_mode,
+            self.accent_theme,
+        ]:
+            widget.currentIndexChanged.connect(self._autosave)
+        for widget in [
+            self.audio_start_delay,
+            self.audio_relaunch_cooldown,
+            self.target_start_delay,
+            self.target_relaunch_cooldown,
+            self.target_refocus_interval,
+            self.saver_idle_delay,
+            self.saver_active_threshold,
+            self.saver_poll,
+            self.saver_start_delay,
+            self.chrome_relaunch_cooldown,
+        ]:
+            widget.valueChanged.connect(self._autosave)
+
+    def _autosave(self, *_args):
+        if getattr(self, "_loading", False):
+            return
+        self._save_config()
 
     def _start_workers(self):
         self._save_config()
@@ -1042,9 +1145,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _update_run_state_labels(self):
         if self.is_running:
-            self.state_label.setText("상태: 실행 중")
+            self.state_label.setText("● 상태: 실행 중")
+            self.state_label.setStyleSheet(f"color: {self.palette['accent']};")
         else:
-            self.state_label.setText("상태: 중지됨")
+            self.state_label.setText("● 상태: 중지됨")
+            self.state_label.setStyleSheet(f"color: {self.palette['text_muted']};")
         self.start_button.setEnabled(not self.is_running)
         self.stop_button.setEnabled(self.is_running)
         self._update_tray_actions()
