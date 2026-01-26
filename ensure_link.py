@@ -87,7 +87,7 @@ class AppConfig:
     chrome_kiosk: bool = False
     saver_enabled: bool = True
     chrome_repeat: bool = True
-    ui_theme: str = "light"
+    ui_theme: str = "dark"
     saver_image_mode: str = "bundled"
     audio_url: str = DEFAULT_AUDIO_URL
     audio_enabled: bool = True
@@ -126,7 +126,7 @@ class AppConfig:
             chrome_kiosk=chrome_kiosk,
             saver_enabled=bool(data.get("saver_enabled", True)),
             chrome_repeat=bool(data.get("chrome_repeat", True)),
-            ui_theme=str(data.get("ui_theme", "light")),
+            ui_theme="dark",
             saver_image_mode=str(data.get("saver_image_mode", "bundled")),
             audio_url=data.get("audio_url", DEFAULT_AUDIO_URL),
             audio_enabled=bool(data.get("audio_enabled", True)),
@@ -521,7 +521,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cfg = load_config()
         self.process_manager = ProcessManager()
         self.is_running = False
-        self.palette = build_palette(self.cfg.ui_theme, self.cfg.accent_theme)
+        self.palette = build_palette("dark", self.cfg.accent_theme)
         self.tray_icon: Optional[QtWidgets.QSystemTrayIcon] = None
         self.tray_menu: Optional[QtWidgets.QMenu] = None
         self.action_start: Optional[QtGui.QAction] = None
@@ -534,20 +534,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self._setup_tray()
 
     def _apply_palette(self):
-        self.palette = build_palette(self.cfg.ui_theme, self.cfg.accent_theme)
+        self.palette = build_palette("dark", self.cfg.accent_theme)
         palette = self.palette
         stylesheet = f"""
             QMainWindow {{ background: {palette['bg']}; }}
-            QLabel {{ color: {palette['text_primary']}; font-family: 'Pretendard', 'Segoe UI', 'Noto Sans KR', sans-serif; font-size: 13px; font-weight: 500; }}
+            QLabel {{ color: {palette['text_primary']}; font-family: 'Pretendard', 'Segoe UI', 'Noto Sans KR', sans-serif; font-size: 14px; font-weight: 600; }}
             #TopBar {{ background: {palette['topbar']}; border-radius: 14px; border: 1px solid {palette['border']}; }}
             #TopTitle {{ font-size: 22px; font-weight: 700; }}
-            #TopSub {{ color: {palette['text_muted']}; font-size: 13px; font-weight: 600; }}
             #StatePill {{
                 background: {palette['bg_card_alt']};
                 border: 1px solid {palette['border']};
                 padding: 4px 10px;
                 border-radius: 12px;
                 font-weight: 700;
+                font-size: 13px;
+                color: {palette['text_primary']};
             }}
             #FancyCard {{
                 background: {palette['bg_card']};
@@ -555,7 +556,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 border: 1px solid {palette['border']};
             }}
             #CardTitle {{ font-size: 16px; font-weight: 700; }}
-            #CardSubtitle {{ color: {palette['text_muted']}; font-size: 13px; font-weight: 500; }}
+            #CardSubtitle {{ color: {palette['text_muted']}; font-size: 13px; font-weight: 600; }}
+            #FormLabel {{ color: {palette['accent_soft']}; font-size: 14px; font-weight: 700; }}
             QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
                 background: {palette['bg_card_alt']};
                 border: 1px solid {palette['border']};
@@ -570,7 +572,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 padding: 8px 14px;
                 color: #0b1220;
                 font-weight: 700;
-                font-size: 13px;
+                font-size: 14px;
             }}
             QPushButton:hover {{ background: {palette['accent_soft']}; }}
             QPushButton:disabled {{
@@ -585,14 +587,19 @@ class MainWindow(QtWidgets.QMainWindow):
                 background: {palette['accent']};
                 color: #0b1220;
             }}
+            QPushButton#StartButton:disabled {{
+                background: #334155;
+                color: {palette['text_muted']};
+            }}
             QPushButton#StopButton {{
                 background: #f97316;
                 color: #fff7ed;
             }}
             QPushButton#StopButton:disabled {{
-                background: {palette['bg_card_alt']};
+                background: #334155;
                 color: {palette['text_muted']};
             }}
+            QCheckBox {{ font-size: 14px; font-weight: 700; color: {palette['text_primary']}; }}
             QCheckBox::indicator {{ width: 46px; height: 24px; }}
             QCheckBox::indicator:unchecked {{
                 border-radius: 12px;
@@ -649,35 +656,37 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_ui(self):
         self.setWindowTitle("AutoWake")
-        self.resize(860, 640)
+        self.resize(760, 600)
         central = QtWidgets.QWidget()
         main_layout = QtWidgets.QVBoxLayout(central)
-        main_layout.setContentsMargins(16, 16, 16, 16)
+        main_layout.setContentsMargins(12, 12, 12, 12)
         main_layout.setSpacing(16)
 
         top_bar = QtWidgets.QFrame(objectName="TopBar")
         top_layout = QtWidgets.QHBoxLayout(top_bar)
-        top_layout.setContentsMargins(16, 16, 16, 16)
+        top_layout.setContentsMargins(12, 12, 12, 12)
         title_box = QtWidgets.QVBoxLayout()
         title = QtWidgets.QLabel("AutoWake")
         title.setObjectName("TopTitle")
-        subtitle = QtWidgets.QLabel("음원 · 특정 URL · 세이버를 분리 실행하는 자동 웨이크업 시스템")
-        subtitle.setObjectName("TopSub")
         title_box.addWidget(title)
-        title_box.addWidget(subtitle)
         top_layout.addLayout(title_box)
         top_layout.addStretch()
-        self.state_label = QtWidgets.QLabel("중지됨")
-        self.state_label.setObjectName("StatePill")
-        top_layout.addWidget(self.state_label)
         self.start_button = QtWidgets.QPushButton("웨이크업 시작")
         self.stop_button = QtWidgets.QPushButton("웨이크업 중지")
         self.start_button.setObjectName("StartButton")
         self.stop_button.setObjectName("StopButton")
         self.start_button.clicked.connect(self._start_workers)
         self.stop_button.clicked.connect(self._stop_workers)
-        top_layout.addWidget(self.start_button)
-        top_layout.addWidget(self.stop_button)
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addWidget(self.start_button)
+        button_row.addWidget(self.stop_button)
+        self.state_label = QtWidgets.QLabel("상태: 중지됨")
+        self.state_label.setObjectName("StatePill")
+        self.state_label.setAlignment(QtCore.Qt.AlignRight)
+        right_box = QtWidgets.QVBoxLayout()
+        right_box.addLayout(button_row)
+        right_box.addWidget(self.state_label)
+        top_layout.addLayout(right_box)
         main_layout.addWidget(top_bar)
 
         tabs = QtWidgets.QTabWidget()
@@ -746,11 +755,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audio_relaunch_cooldown = QtWidgets.QDoubleSpinBox()
         self.audio_relaunch_cooldown.setRange(1.0, 600.0)
         self.audio_relaunch_cooldown.setSingleStep(1.0)
-        form.addRow("음원 URL", self.audio_url)
-        form.addRow("창 모드", self.audio_mode)
-        form.addRow("시작 지연(초)", self.audio_start_delay)
-        form.addRow("재실행 쿨다운(초)", self.audio_relaunch_cooldown)
+        form.addRow(self._label("음원 URL"), self.audio_url)
+        form.addRow(self._label("창 모드"), self.audio_mode)
+        form.addRow(self._label("시작 지연(초)"), self.audio_start_delay)
+        form.addRow(self._label("재실행 쿨다운(초)"), self.audio_relaunch_cooldown)
         layout.addLayout(form)
+
+    @staticmethod
+    def _label(text: str) -> QtWidgets.QLabel:
+        label = QtWidgets.QLabel(text)
+        label.setObjectName("FormLabel")
+        return label
 
     def _build_target_section(self, layout: QtWidgets.QVBoxLayout):
         self.target_enabled = StyledToggle("특정 URL 창 사용")
@@ -769,11 +784,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.target_refocus_interval = QtWidgets.QDoubleSpinBox()
         self.target_refocus_interval.setRange(1.0, 60.0)
         self.target_refocus_interval.setSingleStep(1.0)
-        form.addRow("대상 URL", self.target_url)
-        form.addRow("창 모드", self.target_mode)
-        form.addRow("시작 지연(초)", self.target_start_delay)
-        form.addRow("재실행 쿨다운(초)", self.target_relaunch_cooldown)
-        form.addRow("재포커스 간격(초)", self.target_refocus_interval)
+        form.addRow(self._label("대상 URL"), self.target_url)
+        form.addRow(self._label("창 모드"), self.target_mode)
+        form.addRow(self._label("시작 지연(초)"), self.target_start_delay)
+        form.addRow(self._label("재실행 쿨다운(초)"), self.target_relaunch_cooldown)
+        form.addRow(self._label("재포커스 간격(초)"), self.target_refocus_interval)
         layout.addLayout(form)
 
     def _build_saver_section(self, layout: QtWidgets.QVBoxLayout):
@@ -804,12 +819,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.saver_start_delay.setRange(0.0, 60.0)
         self.saver_start_delay.setSingleStep(0.5)
 
-        form.addRow("이미지 모드", self.saver_mode)
-        form.addRow("이미지 경로", image_row)
-        form.addRow("표시 대기(초)", self.saver_idle_delay)
-        form.addRow("활동 감지 임계(초)", self.saver_active_threshold)
-        form.addRow("폴링 주기(초)", self.saver_poll)
-        form.addRow("시작 지연(초)", self.saver_start_delay)
+        form.addRow(self._label("이미지 모드"), self.saver_mode)
+        form.addRow(self._label("이미지 경로"), image_row)
+        form.addRow(self._label("표시 대기(초)"), self.saver_idle_delay)
+        form.addRow(self._label("활동 감지 임계(초)"), self.saver_active_threshold)
+        form.addRow(self._label("폴링 주기(초)"), self.saver_poll)
+        form.addRow(self._label("시작 지연(초)"), self.saver_start_delay)
         layout.addLayout(form)
 
     def _build_settings_section(self, layout: QtWidgets.QVBoxLayout):
@@ -817,8 +832,6 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.notice_enabled)
 
         form = QtWidgets.QFormLayout()
-        self.ui_theme = QtWidgets.QComboBox()
-        self.ui_theme.addItems(["light", "dark"])
         self.accent_theme = QtWidgets.QComboBox()
         self.accent_theme.addItems(["sky", "indigo", "emerald", "rose", "amber", "teal", "violet"])
         self.admin_password = QtWidgets.QLineEdit()
@@ -828,11 +841,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.chrome_relaunch_cooldown = QtWidgets.QDoubleSpinBox()
         self.chrome_relaunch_cooldown.setRange(1.0, 600.0)
         self.chrome_relaunch_cooldown.setSingleStep(1.0)
-        form.addRow("테마", self.ui_theme)
-        form.addRow("강조 색상", self.accent_theme)
-        form.addRow("공통 쿨다운(초)", self.chrome_relaunch_cooldown)
-        form.addRow("관리자 비밀번호", self.admin_password)
-        form.addRow("비밀번호 확인", self.admin_password_confirm)
+        form.addRow(self._label("강조 색상"), self.accent_theme)
+        form.addRow(self._label("공통 쿨다운(초)"), self.chrome_relaunch_cooldown)
+        form.addRow(self._label("관리자 비밀번호"), self.admin_password)
+        form.addRow(self._label("비밀번호 확인"), self.admin_password_confirm)
         layout.addLayout(form)
 
         path_row = QtWidgets.QHBoxLayout()
@@ -960,7 +972,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.saver_start_delay.setValue(cfg.saver_start_delay_sec)
 
         self.notice_enabled.setChecked(cfg.notice_enabled)
-        self.ui_theme.setCurrentText(cfg.ui_theme)
         self.accent_theme.setCurrentText(cfg.accent_theme)
         self.chrome_relaunch_cooldown.setValue(cfg.chrome_relaunch_cooldown_sec)
         self.admin_password.setText(cfg.admin_password)
@@ -983,7 +994,7 @@ class MainWindow(QtWidgets.QMainWindow):
             chrome_kiosk=target_mode == "kiosk",
             saver_enabled=self.saver_enabled.isChecked(),
             chrome_repeat=self.cfg.chrome_repeat,
-            ui_theme=self.ui_theme.currentText(),
+            ui_theme="dark",
             saver_image_mode=self.saver_mode.currentText(),
             audio_url=self.audio_url.text(),
             audio_enabled=self.audio_enabled.isChecked(),
@@ -1031,9 +1042,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _update_run_state_labels(self):
         if self.is_running:
-            self.state_label.setText("현재 웨이크업이 실행 중입니다")
+            self.state_label.setText("상태: 실행 중")
         else:
-            self.state_label.setText("현재 웨이크업이 중지된 상태입니다")
+            self.state_label.setText("상태: 중지됨")
         self.start_button.setEnabled(not self.is_running)
         self.stop_button.setEnabled(self.is_running)
         self._update_tray_actions()
@@ -1084,7 +1095,7 @@ class TargetWorker(QtCore.QObject):
         self.last_launch = 0.0
         self.last_refocus = 0.0
         self.pending_launch_at: Optional[float] = None
-        self.palette_key = (self.cfg.ui_theme, self.cfg.accent_theme)
+        self.palette_key = ("dark", self.cfg.accent_theme)
         self.palette = build_palette(*self.palette_key)
         self.notice = NoticeWindow(self.palette)
         self.timer = QtCore.QTimer()
@@ -1093,7 +1104,7 @@ class TargetWorker(QtCore.QObject):
 
     def _tick(self):
         self.cfg = load_config()
-        new_key = (self.cfg.ui_theme, self.cfg.accent_theme)
+        new_key = ("dark", self.cfg.accent_theme)
         if new_key != self.palette_key:
             self.palette_key = new_key
             self.palette = build_palette(*new_key)
@@ -1162,7 +1173,7 @@ class SaverWorker(QtCore.QObject):
     def __init__(self):
         super().__init__()
         self.cfg = load_config()
-        self.palette_key = (self.cfg.ui_theme, self.cfg.accent_theme)
+        self.palette_key = ("dark", self.cfg.accent_theme)
         self.palette = build_palette(*self.palette_key)
         self.window = SaverWindow(self.cfg, self.palette)
         self.timer = QtCore.QTimer()
@@ -1172,7 +1183,7 @@ class SaverWorker(QtCore.QObject):
 
     def _tick(self):
         self.cfg = load_config()
-        new_key = (self.cfg.ui_theme, self.cfg.accent_theme)
+        new_key = ("dark", self.cfg.accent_theme)
         if new_key != self.palette_key:
             self.palette_key = new_key
             self.palette = build_palette(*new_key)
