@@ -1,24 +1,21 @@
+import argparse
 import ctypes
 from ctypes import wintypes
 from dataclasses import dataclass, asdict
 import json
 import os
 import subprocess
-import threading
+import sys
 import time
 from datetime import datetime
-import sys
-import tkinter as tk
-from tkinter import filedialog, ttk
-from PIL import Image, ImageTk, ImageDraw, ImageFont
-import pystray
+from typing import Optional
+
+from PySide6 import QtCore, QtGui, QtWidgets
 
 # ================== 설정 ==================
 DEFAULT_URL = "https://lib.koreatech.ac.kr/search/i-discovery"
-DEFAULT_LOCAL_IMAGE = (
-    r"C:\AutoWake"
-    r"\default_saver.png"
-)
+DEFAULT_AUDIO_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+DEFAULT_LOCAL_IMAGE = r"C:\AutoWake\default_saver.png"
 
 WORK_DIR = r"C:\AutoWake"
 CONFIG_FILE = os.path.join(WORK_DIR, "config.json")
@@ -31,21 +28,30 @@ CHROME_CANDIDATES = [
 # ==========================================
 
 
-# ---------- 내부 중복 실행 방지(뮤텍스) ----------
-def single_instance_or_exit(name="AutoWake_EnsureLink_SingleInstance"):
-    """
-    같은 PC에서 이 프로그램이 이미 실행 중이면 즉시 종료.
-    (작업 스케줄러/시작프로그램/수동 실행 등 어떤 경우에도 안전)
-    """
-    kernel32 = ctypes.windll.kernel32
-    CreateMutexW = kernel32.CreateMutexW
-    GetLastError = kernel32.GetLastError
+def log(msg: str) -> None:
+    os.makedirs(WORK_DIR, exist_ok=True)
+    path = os.path.join(WORK_DIR, "autowake.log")
+    with open(path, "a", encoding="utf-8") as file:
+        file.write(f"{datetime.now()} - {msg}\n")
 
-    mutex = CreateMutexW(None, False, name)
-    ERROR_ALREADY_EXISTS = 183
-    if GetLastError() == ERROR_ALREADY_EXISTS:
+
+def resource_path(relative_path: str) -> str:
+    base_path = getattr(sys, "_MEIPASS", os.path.dirname(__file__))
+    return os.path.join(base_path, relative_path)
+
+
+# ---------- 내부 중복 실행 방지(뮤텍스) ----------
+
+def single_instance_or_exit(name="AutoWake_SingleInstance"):
+    kernel32 = ctypes.windll.kernel32
+    create_mutex = kernel32.CreateMutexW
+    get_last_error = kernel32.GetLastError
+
+    mutex = create_mutex(None, False, name)
+    error_already_exists = 183
+    if get_last_error() == error_already_exists:
         raise SystemExit("Already running")
-    return mutex  # 프로세스가 살아있는 동안 유지
+    return mutex
 
 
 # ----- WinAPI(Idle 체크) -----
@@ -59,15 +65,13 @@ class LASTINPUTINFO(ctypes.Structure):
     _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
 
 
-def log(msg: str):
-    os.makedirs(WORK_DIR, exist_ok=True)
-    p = os.path.join(WORK_DIR, "autowake.log")
-    with open(p, "a", encoding="utf-8") as f:
-        f.write(f"{datetime.now()} - {msg}\n")
-
-def resource_path(relative_path: str) -> str:
-    base_path = getattr(sys, "_MEIPASS", os.path.dirname(__file__))
-    return os.path.join(base_path, relative_path)
+def seconds_since_last_input() -> float:
+    info = LASTINPUTINFO()
+    info.cbSize = ctypes.sizeof(LASTINPUTINFO)
+    if not GetLastInputInfo(ctypes.byref(info)):
+        return 0.0
+    elapsed_ms = int(GetTickCount64()) - int(info.dwTime)
+    return elapsed_ms / 1000.0
 
 
 @dataclass
@@ -85,9 +89,27 @@ class AppConfig:
     chrome_repeat: bool = True
     ui_theme: str = "light"
     saver_image_mode: str = "bundled"
+    audio_url: str = DEFAULT_AUDIO_URL
+    audio_enabled: bool = True
+    audio_window_mode: str = "minimized"
+    audio_start_delay_sec: float = 2.0
+    audio_relaunch_cooldown_sec: float = 10.0
+    target_enabled: bool = True
+    target_window_mode: str = "fullscreen"
+    target_start_delay_sec: float = 1.0
+    target_relaunch_cooldown_sec: float = 10.0
+    target_refocus_interval_sec: float = 3.0
+    saver_start_delay_sec: float = 1.0
+    notice_enabled: bool = True
 
     @classmethod
     def from_dict(cls, data: dict) -> "AppConfig":
+        chrome_fullscreen = bool(data.get("chrome_fullscreen", True))
+        chrome_kiosk = bool(data.get("chrome_kiosk", False))
+        inferred_mode = "fullscreen" if chrome_fullscreen else "normal"
+        if chrome_kiosk:
+            inferred_mode = "kiosk"
+
         return cls(
             url=data.get("url", DEFAULT_URL),
             image_path=data.get("image_path", DEFAULT_LOCAL_IMAGE),
@@ -98,12 +120,30 @@ class AppConfig:
             chrome_relaunch_cooldown_sec=float(
                 data.get("chrome_relaunch_cooldown_sec", 10.0)
             ),
-            chrome_fullscreen=bool(data.get("chrome_fullscreen", True)),
-            chrome_kiosk=bool(data.get("chrome_kiosk", False)),
+            chrome_fullscreen=chrome_fullscreen,
+            chrome_kiosk=chrome_kiosk,
             saver_enabled=bool(data.get("saver_enabled", True)),
             chrome_repeat=bool(data.get("chrome_repeat", True)),
             ui_theme=str(data.get("ui_theme", "light")),
             saver_image_mode=str(data.get("saver_image_mode", "bundled")),
+            audio_url=data.get("audio_url", DEFAULT_AUDIO_URL),
+            audio_enabled=bool(data.get("audio_enabled", True)),
+            audio_window_mode=data.get("audio_window_mode", "minimized"),
+            audio_start_delay_sec=float(data.get("audio_start_delay_sec", 2.0)),
+            audio_relaunch_cooldown_sec=float(
+                data.get("audio_relaunch_cooldown_sec", 10.0)
+            ),
+            target_enabled=bool(data.get("target_enabled", True)),
+            target_window_mode=data.get("target_window_mode", inferred_mode),
+            target_start_delay_sec=float(data.get("target_start_delay_sec", 1.0)),
+            target_relaunch_cooldown_sec=float(
+                data.get("target_relaunch_cooldown_sec", 10.0)
+            ),
+            target_refocus_interval_sec=float(
+                data.get("target_refocus_interval_sec", 3.0)
+            ),
+            saver_start_delay_sec=float(data.get("saver_start_delay_sec", 1.0)),
+            notice_enabled=bool(data.get("notice_enabled", True)),
         )
 
 
@@ -114,11 +154,11 @@ def load_config() -> AppConfig:
         save_config(cfg)
         return cfg
     try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        with open(CONFIG_FILE, "r", encoding="utf-8") as file:
+            data = json.load(file)
         return AppConfig.from_dict(data)
-    except Exception as e:
-        log(f"CONFIG load error: {e}")
+    except Exception as exc:
+        log(f"CONFIG load error: {exc}")
         return AppConfig()
 
 
@@ -126,52 +166,35 @@ def save_config(cfg: AppConfig) -> None:
     os.makedirs(WORK_DIR, exist_ok=True)
     data = asdict(cfg)
     try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        log(f"CONFIG save error: {e}")
+        with open(CONFIG_FILE, "w", encoding="utf-8") as file:
+            json.dump(data, file, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        log(f"CONFIG save error: {exc}")
 
 
-def seconds_since_last_input() -> float:
-    info = LASTINPUTINFO()
-    info.cbSize = ctypes.sizeof(LASTINPUTINFO)
-    if not GetLastInputInfo(ctypes.byref(info)):
-        return 0.0
-    elapsed_ms = int(GetTickCount64()) - int(info.dwTime)
-    return elapsed_ms / 1000.0
+def build_palette() -> dict:
+    return {
+        "bg": "#0b1220",
+        "bg_card": "#111827",
+        "bg_card_alt": "#0f172a",
+        "accent": "#38bdf8",
+        "accent_soft": "#0ea5e9",
+        "text_primary": "#e2e8f0",
+        "text_muted": "#94a3b8",
+        "border": "#1f2937",
+        "bg_dark": "#0f172a",
+    }
 
 
 def find_chrome_exe() -> str:
-    for p in CHROME_CANDIDATES:
-        if os.path.exists(p):
-            return p
+    for path in CHROME_CANDIDATES:
+        if os.path.exists(path):
+            return path
     return "chrome"
 
-def is_chrome_running() -> bool:
-    try:
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        result = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq chrome.exe"],
-            capture_output=True,
-            text=True,
-            check=False,
-            creationflags=creationflags,
-        )
-        return "chrome.exe" in result.stdout.lower()
-    except Exception as exc:
-        log(f"CHECK chrome running error: {exc}")
-        return False
 
-
-def launch_fullscreen_site(cfg: AppConfig) -> subprocess.Popen | None:
-    """
-    크롬 FULL(사이트) 실행 후 Popen 리턴.
-    실패하면 None.
-    """
+def build_chrome_args(url: str, profile_dir: str, mode: str, autoplay: bool) -> list[str]:
     chrome = find_chrome_exe()
-    profile_dir = os.path.join(cfg.work_dir, "ChromeProfile_FULL")
-    os.makedirs(profile_dir, exist_ok=True)
-
     args = [
         chrome,
         f"--user-data-dir={profile_dir}",
@@ -179,699 +202,761 @@ def launch_fullscreen_site(cfg: AppConfig) -> subprocess.Popen | None:
         "--no-default-browser-check",
         "--new-window",
     ]
-    if cfg.chrome_fullscreen:
+    if autoplay:
+        args.append("--autoplay-policy=no-user-gesture-required")
+    mode = (mode or "normal").lower()
+    if mode == "minimized":
+        args.append("--start-minimized")
+    elif mode == "fullscreen":
         args.append("--start-fullscreen")
-    if cfg.chrome_kiosk:
+    elif mode == "kiosk":
         args.append("--kiosk")
-    args.append(cfg.url)
+    args.append(url)
+    return args
+
+
+def ensure_youtube_autoplay(url: str) -> str:
+    if "youtube.com" not in url and "youtu.be" not in url:
+        return url
+    if "autoplay=" in url:
+        return url
+    connector = "&" if "?" in url else "?"
+    return f"{url}{connector}autoplay=1&mute=0&playsinline=1"
+
+
+def launch_chrome(url: str, profile_dir: str, mode: str, autoplay: bool) -> Optional[subprocess.Popen]:
+    args = build_chrome_args(url, profile_dir, mode, autoplay)
     try:
-        log(f"Launching FULL: {args}")
+        log(f"Launching chrome: {args}")
         return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception as e:
-        log(f"ERROR launching FULL: {e}")
+    except Exception as exc:
+        log(f"ERROR launching chrome: {exc}")
         return None
 
 
-# ----- 세이버 오버레이(Tkinter) -----
-class OverlaySaver:
-    def __init__(
-        self,
-        root: tk.Tk,
-        image_path: str,
-        image_mode: str,
-    ):
-        self.root = root
-        self.image_path = image_path
-        self.image_mode = image_mode
-        self.window = None
-        self.visible = False
-        self.tk_img = None
+def find_window_handles_by_pid(pid: int) -> list[int]:
+    handles: list[int] = []
 
-    def show(self):
-        if self.visible:
-            return
-        img = self._load_saver_image()
+    def enum_callback(hwnd, lparam):
+        is_visible = user32.IsWindowVisible(hwnd)
+        if not is_visible:
+            return True
+        found_pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(found_pid))
+        if found_pid.value == pid:
+            handles.append(hwnd)
+        return True
 
-        self.window = tk.Toplevel(self.root)
+    user32.EnumWindows(ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)(enum_callback), 0)
+    return handles
 
-        sw = self.window.winfo_screenwidth()
-        sh = self.window.winfo_screenheight()
 
-        # Windows10 안정: fullscreen 속성 대신 geometry로 전체 덮기
-        self.window.geometry(f"{sw}x{sh}+0+0")
-        self.window.overrideredirect(True)   # 테두리/작업표시줄 없이
-        self.window.attributes("-topmost", True)
+def keep_window_on_top(pid: int) -> None:
+    handles = find_window_handles_by_pid(pid)
+    for hwnd in handles:
+        user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002)
+        user32.SetForegroundWindow(hwnd)
 
-        canvas = tk.Canvas(
-            self.window, width=sw, height=sh, highlightthickness=0, bg="black"
+
+def build_notice_message() -> str:
+    return (
+        "한국기술교육대학교 참고자료실 도서 검색 전용 PC입니다.\n\n"
+        "현재 사용자님을 위하여 대학 도서관 페이지의 통합검색 화면을 기본 창으로 제공하고 있습니다. "
+        "본 PC는 학습·연구 목적의 정보 탐색을 돕기 위해 운영되며, 규정과 보편적 절차를 준수하는 "
+        "올바른 사용을 권장드립니다. 부적절한 사용이 적발될 경우 관련 규정에 따라 안내 및 조치가 "
+        "이루어질 수 있습니다.\n\n"
+        "사용자님께 도움이 되었으면 좋겠습니다. 방문해 주셔서 진심으로 감사합니다.\n\n"
+        "[전체화면/키오스크 종료 방법] \n"
+        "- F11 키로 전체화면을 해제할 수 있습니다.\n"
+        "- ESC 키를 길게 누르면 일부 전체화면이 해제될 수 있습니다.\n"
+        "- Alt + F4 키로 크롬을 종료할 수 있습니다.\n\n"
+        "크롬이 종료되면 몇 초 후 자동으로 다시 실행됩니다. "
+        "계속 이용을 원하시면 크롬 창을 종료하지 않고 사용해 주세요.\n"
+    )
+
+
+class StyledToggle(QtWidgets.QCheckBox):
+    def __init__(self, label: str, parent=None):
+        super().__init__(label, parent)
+        self.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+
+
+class FancyCard(QtWidgets.QFrame):
+    def __init__(self, title: str, subtitle: str, parent=None):
+        super().__init__(parent)
+        self.setObjectName("FancyCard")
+        self.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self.setFrameShadow(QtWidgets.QFrame.Raised)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        header = QtWidgets.QHBoxLayout()
+        title_label = QtWidgets.QLabel(title)
+        title_label.setObjectName("CardTitle")
+        subtitle_label = QtWidgets.QLabel(subtitle)
+        subtitle_label.setObjectName("CardSubtitle")
+        subtitle_label.setWordWrap(True)
+        header.addWidget(title_label)
+        header.addStretch()
+        layout.addLayout(header)
+        layout.addWidget(subtitle_label)
+        self.body_layout = QtWidgets.QVBoxLayout()
+        layout.addLayout(self.body_layout)
+
+
+class NoticeWindow(QtWidgets.QWidget):
+    def __init__(self, palette: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(
+            QtCore.Qt.WindowStaysOnTopHint
+            | QtCore.Qt.FramelessWindowHint
+            | QtCore.Qt.Tool
         )
-        canvas.pack(fill="both", expand=True)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.setWindowTitle("AutoWake 안내")
+        self.palette = palette
+        self._build_ui()
 
-        img = self.fit_contain(img, sw, sh)
-        self.tk_img = ImageTk.PhotoImage(img)
-        canvas.create_image(sw // 2, sh // 2, image=self.tk_img)
+    def _build_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        frame = QtWidgets.QFrame()
+        frame.setObjectName("NoticeFrame")
+        frame_layout = QtWidgets.QVBoxLayout(frame)
+        title = QtWidgets.QLabel("이용 안내")
+        title.setObjectName("NoticeTitle")
+        message = QtWidgets.QLabel(build_notice_message())
+        message.setWordWrap(True)
+        message.setObjectName("NoticeMessage")
+        frame_layout.addWidget(title)
+        frame_layout.addWidget(message)
+        layout.addWidget(frame)
 
-        self.visible = True
-        log("Overlay SHOW")
-        self.window.update()
+    def show_centered(self):
+        screen = QtGui.QGuiApplication.primaryScreen()
+        geometry = screen.availableGeometry() if screen else QtCore.QRect(0, 0, 800, 600)
+        width = int(geometry.width() * 0.4)
+        height = int(geometry.height() * 0.55)
+        self.setGeometry(
+            geometry.center().x() - width // 2,
+            geometry.center().y() - height // 2,
+            width,
+            height,
+        )
+        self.show()
 
-    def _load_saver_image(self) -> Image.Image:
-        mode = (self.image_mode or "path").lower()
+
+class SaverWindow(QtWidgets.QWidget):
+    def __init__(self, cfg: AppConfig, palette: dict, parent=None):
+        super().__init__(parent)
+        self.cfg = cfg
+        self.palette = palette
+        self.label = QtWidgets.QLabel(alignment=QtCore.Qt.AlignCenter)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.label)
+        self.setWindowFlags(
+            QtCore.Qt.WindowStaysOnTopHint
+            | QtCore.Qt.FramelessWindowHint
+            | QtCore.Qt.Tool
+        )
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+
+    def load_pixmap(self) -> QtGui.QPixmap:
+        mode = (self.cfg.saver_image_mode or "path").lower()
         if mode == "generated":
-            return self._build_fallback_image()
+            return self._build_fallback_pixmap()
         if mode == "bundled":
-            return self._load_image_or_fallback(
-                resource_path(DEFAULT_BUNDLED_IMAGE), "BUNDLED_IMAGE"
+            path = resource_path(DEFAULT_BUNDLED_IMAGE)
+        else:
+            path = self.cfg.image_path
+        if path and os.path.exists(path):
+            pixmap = QtGui.QPixmap(path)
+            if not pixmap.isNull():
+                return pixmap
+        return self._build_fallback_pixmap()
+
+    def _build_fallback_pixmap(self) -> QtGui.QPixmap:
+        width, height = 1600, 900
+        pixmap = QtGui.QPixmap(width, height)
+        pixmap.fill(QtGui.QColor(self.palette["bg_dark"]))
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        painter.setPen(QtGui.QColor(self.palette["text_primary"]))
+        title_font = QtGui.QFont("Segoe UI", 42, QtGui.QFont.Bold)
+        subtitle_font = QtGui.QFont("Segoe UI", 22)
+        detail_font = QtGui.QFont("Segoe UI", 18)
+        painter.setFont(title_font)
+        painter.drawText(QtCore.QPoint(120, 160), "AutoWake")
+        painter.setFont(subtitle_font)
+        painter.drawText(QtCore.QPoint(120, 230), "자동 생성 안내 이미지")
+        painter.setFont(detail_font)
+        painter.setPen(QtGui.QColor(self.palette["text_muted"]))
+        painter.drawText(QtCore.QPoint(120, 280), "참고자료실 전용 도서 검색 PC입니다.")
+        painter.drawText(QtCore.QPoint(120, 320), "사용해 주셔서 감사합니다.")
+        painter.end()
+        return pixmap
+
+    def refresh(self):
+        pixmap = self.load_pixmap()
+        screen = QtGui.QGuiApplication.primaryScreen()
+        if screen:
+            geometry = screen.geometry()
+            scaled = pixmap.scaled(
+                geometry.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
             )
-        return self._load_image_or_fallback(self.image_path, "LOCAL_IMAGE")
+        else:
+            scaled = pixmap
+        self.label.setPixmap(scaled)
 
-    def _load_image_or_fallback(self, path: str, label: str) -> Image.Image:
-        if not path or not os.path.exists(path):
-            log(f"{label} not found: {path}, using fallback")
-            return self._build_fallback_image()
-        try:
-            return Image.open(path)
-        except Exception as exc:
-            log(f"{label} open error: {exc}, using fallback")
-            return self._build_fallback_image()
+    def show_fullscreen(self):
+        self.refresh()
+        self.showFullScreen()
 
-    def hide(self):
-        if not self.visible:
-            return
-        try:
-            self.window.destroy()
-        except Exception:
-            pass
-        self.window = None
-        self.visible = False
-        self.tk_img = None
-        log("Overlay HIDE")
 
-    def pump(self):
-        """표시 중일 때 화면 갱신 유지"""
-        if self.visible and self.window:
-            try:
-                self.window.update()
-            except Exception:
-                self.visible = False
-                self.window = None
-                self.tk_img = None
-
-    @staticmethod
-    def fit_contain(img: Image.Image, w: int, h: int) -> Image.Image:
-        iw, ih = img.size
-        scale = min(w / iw, h / ih)
-        nw, nh = int(iw * scale), int(ih * scale)
-        return img.resize((nw, nh), Image.LANCZOS)
-
-    def _build_fallback_image(self) -> Image.Image:
-        w, h = 1600, 900
-        img = Image.new("RGB", (w, h), (20, 24, 33))
-        draw = ImageDraw.Draw(img)
-        title = "AutoWake"
-        subtitle = "이미지 불러오기를 실패했습니다."
-        detail = "해당 PC는 참고자료실 전용 도서 검색 PC입니다."
-        thanks = "오늘도 방문해주셔서 감사합니다."
-        try:
-            title_font = ImageFont.truetype("Segoe UI", 72)
-            subtitle_font = ImageFont.truetype("Segoe UI", 36)
-            detail_font = ImageFont.truetype("Segoe UI", 28)
-        except Exception:
-            title_font = ImageFont.load_default()
-            subtitle_font = ImageFont.load_default()
-            detail_font = ImageFont.load_default()
-        def safe_text(text: str) -> str:
-            try:
-                text.encode("latin-1")
-                return text
-            except UnicodeEncodeError:
-                return "Fallback image in use."
-
-        def draw_line(pos, text, font, color):
-            try:
-                draw.text(pos, text, fill=color, font=font)
-            except Exception:
-                draw.text(pos, safe_text(text), fill=color, font=font)
-
-        draw_line((100, 180), title, title_font, (230, 230, 230))
-        draw_line((100, 300), subtitle, subtitle_font, (200, 200, 200))
-        draw_line((100, 360), detail, detail_font, (190, 200, 220))
-        draw_line((100, 410), thanks, detail_font, (170, 180, 200))
-        draw.rectangle([(100, 440), (1500, 444)], fill=(90, 98, 110))
-        return img
-
-class AutoWakeApp:
+class ProcessManager:
     def __init__(self):
+        self.processes: dict[str, subprocess.Popen] = {}
+
+    def start(self, mode: str):
+        if mode in self.processes and self.processes[mode].poll() is None:
+            return
+        args = [sys.executable, os.path.abspath(__file__), "--mode", mode]
+        proc = subprocess.Popen(args)
+        self.processes[mode] = proc
+        log(f"Spawned worker: {mode}")
+
+    def stop(self, mode: str):
+        proc = self.processes.get(mode)
+        if not proc:
+            return
+        if proc.poll() is None:
+            proc.terminate()
+        self.processes.pop(mode, None)
+
+    def stop_all(self):
+        for mode in list(self.processes.keys()):
+            self.stop(mode)
+
+
+class MainWindow(QtWidgets.QMainWindow):
+    def __init__(self):
+        super().__init__()
         self._mutex = single_instance_or_exit()
         self.cfg = load_config()
-        self._running = False
-        self._full_proc: subprocess.Popen | None = None
-        self._last_full_launch_ts = 0.0
-        self.root = tk.Tk()
-        self.root.withdraw()
-        self._saver = OverlaySaver(
-            self.root,
-            self.cfg.image_path,
-            self.cfg.saver_image_mode,
+        self.process_manager = ProcessManager()
+        self.palette = build_palette()
+        self._build_ui()
+        self._apply_palette()
+        self._load_config_to_ui()
+
+    def _apply_palette(self):
+        palette = self.palette
+        stylesheet = f"""
+            QMainWindow {{ background: {palette['bg']}; }}
+            QLabel {{ color: {palette['text_primary']}; font-family: 'Segoe UI'; }}
+            #TopBar {{ background: {palette['bg_card']}; border-radius: 12px; }}
+            #TopTitle {{ font-size: 20px; font-weight: 600; }}
+            #TopSub {{ color: {palette['text_muted']}; }}
+            #FancyCard {{
+                background: {palette['bg_card']};
+                border-radius: 14px;
+                border: 1px solid {palette['border']};
+            }}
+            #CardTitle {{ font-size: 16px; font-weight: 600; }}
+            #CardSubtitle {{ color: {palette['text_muted']}; }}
+            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
+                background: {palette['bg_card_alt']};
+                border: 1px solid {palette['border']};
+                padding: 6px 10px;
+                border-radius: 8px;
+                color: {palette['text_primary']};
+            }}
+            QComboBox::drop-down {{ border: none; }}
+            QPushButton {{
+                background: {palette['accent']};
+                border-radius: 10px;
+                padding: 8px 14px;
+                color: #0b1220;
+                font-weight: 600;
+            }}
+            QPushButton:hover {{ background: {palette['accent_soft']}; }}
+            QPushButton#GhostButton {{
+                background: {palette['bg_card_alt']};
+                color: {palette['text_primary']};
+            }}
+            QCheckBox::indicator {{ width: 46px; height: 24px; }}
+            QCheckBox::indicator:unchecked {{
+                border-radius: 12px;
+                background: {palette['bg_card_alt']};
+                border: 1px solid {palette['border']};
+            }}
+            QCheckBox::indicator:checked {{
+                border-radius: 12px;
+                background: {palette['accent']};
+            }}
+            QCheckBox::indicator:unchecked::after {{
+                content: '';
+                width: 18px; height: 18px;
+                margin: 2px;
+                border-radius: 9px;
+                background: {palette['text_muted']};
+            }}
+            QCheckBox::indicator:checked::after {{
+                content: '';
+                width: 18px; height: 18px;
+                margin: 2px 2px 2px 24px;
+                border-radius: 9px;
+                background: #0b1220;
+            }}
+            #NoticeFrame {{
+                background: {palette['bg_card']};
+                border-radius: 16px;
+                border: 1px solid {palette['border']};
+            }}
+            #NoticeTitle {{ font-size: 18px; font-weight: 700; }}
+            #NoticeMessage {{ color: {palette['text_muted']}; }}
+        """
+        self.setStyleSheet(stylesheet)
+
+    def _build_ui(self):
+        self.setWindowTitle("AutoWake")
+        self.resize(1080, 820)
+        central = QtWidgets.QWidget()
+        main_layout = QtWidgets.QVBoxLayout(central)
+        main_layout.setContentsMargins(24, 24, 24, 24)
+        main_layout.setSpacing(16)
+
+        top_bar = QtWidgets.QFrame(objectName="TopBar")
+        top_layout = QtWidgets.QHBoxLayout(top_bar)
+        top_layout.setContentsMargins(16, 16, 16, 16)
+        title_box = QtWidgets.QVBoxLayout()
+        title = QtWidgets.QLabel("AutoWake")
+        title.setObjectName("TopTitle")
+        subtitle = QtWidgets.QLabel("음원 · 특정 URL · 세이버를 분리 실행하는 자동 웨이크업 시스템")
+        subtitle.setObjectName("TopSub")
+        title_box.addWidget(title)
+        title_box.addWidget(subtitle)
+        top_layout.addLayout(title_box)
+        top_layout.addStretch()
+        self.start_button = QtWidgets.QPushButton("웨이크업 시작")
+        self.stop_button = QtWidgets.QPushButton("웨이크업 중지")
+        self.stop_button.setObjectName("GhostButton")
+        self.start_button.clicked.connect(self._start_workers)
+        self.stop_button.clicked.connect(self._stop_workers)
+        top_layout.addWidget(self.start_button)
+        top_layout.addWidget(self.stop_button)
+        main_layout.addWidget(top_bar)
+
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QtWidgets.QWidget()
+        scroll_layout = QtWidgets.QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(16)
+
+        self.audio_card = FancyCard(
+            "음원 창",
+            "YouTube 포함 음원 창을 별도 프로세스로 실행하고 자동 재생합니다.",
         )
-        self._icon = None
-        self._settings_window = None
+        self._build_audio_section(self.audio_card.body_layout)
+        scroll_layout.addWidget(self.audio_card)
 
-    def start(self):
-        if self._running:
-            return
-        self._running = True
-        self._ensure_chrome_launch()
-        self._schedule_tick()
-        self._refresh_menu()
+        self.target_card = FancyCard(
+            "특정 URL 창",
+            "키오스크/전체화면/일반 모드를 선택할 수 있는 대상 창입니다.",
+        )
+        self._build_target_section(self.target_card.body_layout)
+        scroll_layout.addWidget(self.target_card)
 
-    def stop(self):
-        self._running = False
-        self._saver.hide()
-        self._refresh_menu()
+        self.saver_card = FancyCard(
+            "스크린세이버",
+            "사용자 지정 이미지 또는 자동 생성 안내 문구로 세이버를 표시합니다.",
+        )
+        self._build_saver_section(self.saver_card.body_layout)
+        scroll_layout.addWidget(self.saver_card)
 
-    def update_config(self, new_cfg: AppConfig):
-        self.cfg = new_cfg
-        self._saver.image_path = new_cfg.image_path
-        self._saver.image_mode = new_cfg.saver_image_mode
-        save_config(new_cfg)
+        self.general_card = FancyCard(
+            "운영 옵션",
+            "재실행 쿨다운과 안내창 표시 여부를 관리합니다.",
+        )
+        self._build_general_section(self.general_card.body_layout)
+        scroll_layout.addWidget(self.general_card)
 
-    def _schedule_tick(self):
-        if not self._running:
-            return
-        poll_ms = int(self.cfg.poll_sec * 1000)
-        self.root.after(max(poll_ms, 100), self._tick)
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_content)
+        main_layout.addWidget(scroll)
+        self.setCentralWidget(central)
 
-    def _ensure_chrome_launch(self):
-        log("===== START =====")
-        if self._full_proc is None or self._full_proc.poll() is not None:
-            self._full_proc = launch_fullscreen_site(self.cfg)
-            self._last_full_launch_ts = time.time()
+    def _build_audio_section(self, layout: QtWidgets.QVBoxLayout):
+        self.audio_enabled = StyledToggle("음원 창 사용")
+        layout.addWidget(self.audio_enabled)
 
-    def _tick(self):
-        if not self._running:
-            return
+        form = QtWidgets.QFormLayout()
+        self.audio_url = QtWidgets.QLineEdit()
+        self.audio_mode = QtWidgets.QComboBox()
+        self.audio_mode.addItems(["minimized", "normal", "fullscreen", "kiosk"])
+        self.audio_start_delay = QtWidgets.QDoubleSpinBox()
+        self.audio_start_delay.setRange(0.0, 60.0)
+        self.audio_start_delay.setSingleStep(0.5)
+        self.audio_relaunch_cooldown = QtWidgets.QDoubleSpinBox()
+        self.audio_relaunch_cooldown.setRange(1.0, 600.0)
+        self.audio_relaunch_cooldown.setSingleStep(1.0)
+        form.addRow("음원 URL", self.audio_url)
+        form.addRow("창 모드", self.audio_mode)
+        form.addRow("시작 지연(초)", self.audio_start_delay)
+        form.addRow("재실행 쿨다운(초)", self.audio_relaunch_cooldown)
+        layout.addLayout(form)
+
+    def _build_target_section(self, layout: QtWidgets.QVBoxLayout):
+        self.target_enabled = StyledToggle("특정 URL 창 사용")
+        layout.addWidget(self.target_enabled)
+
+        form = QtWidgets.QFormLayout()
+        self.target_url = QtWidgets.QLineEdit()
+        self.target_mode = QtWidgets.QComboBox()
+        self.target_mode.addItems(["normal", "fullscreen", "kiosk", "minimized"])
+        self.target_start_delay = QtWidgets.QDoubleSpinBox()
+        self.target_start_delay.setRange(0.0, 60.0)
+        self.target_start_delay.setSingleStep(0.5)
+        self.target_relaunch_cooldown = QtWidgets.QDoubleSpinBox()
+        self.target_relaunch_cooldown.setRange(1.0, 600.0)
+        self.target_relaunch_cooldown.setSingleStep(1.0)
+        self.target_refocus_interval = QtWidgets.QDoubleSpinBox()
+        self.target_refocus_interval.setRange(1.0, 60.0)
+        self.target_refocus_interval.setSingleStep(1.0)
+        form.addRow("대상 URL", self.target_url)
+        form.addRow("창 모드", self.target_mode)
+        form.addRow("시작 지연(초)", self.target_start_delay)
+        form.addRow("재실행 쿨다운(초)", self.target_relaunch_cooldown)
+        form.addRow("재포커스 간격(초)", self.target_refocus_interval)
+        layout.addLayout(form)
+
+    def _build_saver_section(self, layout: QtWidgets.QVBoxLayout):
+        self.saver_enabled = StyledToggle("스크린세이버 사용")
+        layout.addWidget(self.saver_enabled)
+
+        form = QtWidgets.QFormLayout()
+        self.saver_mode = QtWidgets.QComboBox()
+        self.saver_mode.addItems(["bundled", "path", "generated"])
+        self.saver_image_path = QtWidgets.QLineEdit()
+        browse = QtWidgets.QPushButton("찾기")
+        browse.setObjectName("GhostButton")
+        browse.clicked.connect(self._browse_image)
+        image_row = QtWidgets.QHBoxLayout()
+        image_row.addWidget(self.saver_image_path)
+        image_row.addWidget(browse)
+
+        self.saver_idle_delay = QtWidgets.QDoubleSpinBox()
+        self.saver_idle_delay.setRange(1.0, 3600.0)
+        self.saver_idle_delay.setSingleStep(1.0)
+        self.saver_active_threshold = QtWidgets.QDoubleSpinBox()
+        self.saver_active_threshold.setRange(0.1, 60.0)
+        self.saver_active_threshold.setSingleStep(0.1)
+        self.saver_poll = QtWidgets.QDoubleSpinBox()
+        self.saver_poll.setRange(0.1, 10.0)
+        self.saver_poll.setSingleStep(0.1)
+        self.saver_start_delay = QtWidgets.QDoubleSpinBox()
+        self.saver_start_delay.setRange(0.0, 60.0)
+        self.saver_start_delay.setSingleStep(0.5)
+
+        form.addRow("이미지 모드", self.saver_mode)
+        form.addRow("이미지 경로", image_row)
+        form.addRow("표시 대기(초)", self.saver_idle_delay)
+        form.addRow("활동 감지 임계(초)", self.saver_active_threshold)
+        form.addRow("폴링 주기(초)", self.saver_poll)
+        form.addRow("시작 지연(초)", self.saver_start_delay)
+        layout.addLayout(form)
+
+    def _build_general_section(self, layout: QtWidgets.QVBoxLayout):
+        self.notice_enabled = StyledToggle("안내창 표시")
+        layout.addWidget(self.notice_enabled)
+
+        form = QtWidgets.QFormLayout()
+        self.ui_theme = QtWidgets.QComboBox()
+        self.ui_theme.addItems(["light", "dark"])
+        self.chrome_relaunch_cooldown = QtWidgets.QDoubleSpinBox()
+        self.chrome_relaunch_cooldown.setRange(1.0, 600.0)
+        self.chrome_relaunch_cooldown.setSingleStep(1.0)
+        form.addRow("테마", self.ui_theme)
+        form.addRow("공통 쿨다운(초)", self.chrome_relaunch_cooldown)
+        layout.addLayout(form)
+
+        buttons = QtWidgets.QHBoxLayout()
+        save_button = QtWidgets.QPushButton("설정 저장")
+        save_button.clicked.connect(self._save_config)
+        open_button = QtWidgets.QPushButton("설정 폴더 열기")
+        open_button.setObjectName("GhostButton")
+        open_button.clicked.connect(self._open_work_dir)
+        buttons.addWidget(save_button)
+        buttons.addWidget(open_button)
+        buttons.addStretch()
+        layout.addLayout(buttons)
+
+    def _browse_image(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "이미지 파일 선택",
+            "",
+            "Image files (*.png *.jpg *.jpeg *.bmp *.gif)",
+        )
+        if path:
+            self.saver_image_path.setText(path)
+
+    def _open_work_dir(self):
+        try:
+            os.startfile(self.cfg.work_dir)
+        except Exception as exc:
+            log(f"OPEN work dir error: {exc}")
+
+    def _load_config_to_ui(self):
         cfg = self.cfg
-        if cfg.chrome_repeat:
-            if self._full_proc is None or self._full_proc.poll() is not None:
-                now = time.time()
-                if now - self._last_full_launch_ts >= cfg.chrome_relaunch_cooldown_sec:
-                    if is_chrome_running():
-                        log("Chrome is already running; skip relaunch")
-                    else:
-                        log("FULL chrome not running -> relaunch")
-                        self._full_proc = launch_fullscreen_site(cfg)
-                        self._last_full_launch_ts = now
+        self.audio_enabled.setChecked(cfg.audio_enabled)
+        self.audio_url.setText(cfg.audio_url)
+        self.audio_mode.setCurrentText(cfg.audio_window_mode)
+        self.audio_start_delay.setValue(cfg.audio_start_delay_sec)
+        self.audio_relaunch_cooldown.setValue(cfg.audio_relaunch_cooldown_sec)
 
-        idle = seconds_since_last_input()
+        self.target_enabled.setChecked(cfg.target_enabled)
+        self.target_url.setText(cfg.url)
+        self.target_mode.setCurrentText(cfg.target_window_mode)
+        self.target_start_delay.setValue(cfg.target_start_delay_sec)
+        self.target_relaunch_cooldown.setValue(cfg.target_relaunch_cooldown_sec)
+        self.target_refocus_interval.setValue(cfg.target_refocus_interval_sec)
+
+        self.saver_enabled.setChecked(cfg.saver_enabled)
+        self.saver_mode.setCurrentText(cfg.saver_image_mode)
+        self.saver_image_path.setText(cfg.image_path)
+        self.saver_idle_delay.setValue(cfg.idle_to_show_sec)
+        self.saver_active_threshold.setValue(cfg.active_threshold_sec)
+        self.saver_poll.setValue(cfg.poll_sec)
+        self.saver_start_delay.setValue(cfg.saver_start_delay_sec)
+
+        self.notice_enabled.setChecked(cfg.notice_enabled)
+        self.ui_theme.setCurrentText(cfg.ui_theme)
+        self.chrome_relaunch_cooldown.setValue(cfg.chrome_relaunch_cooldown_sec)
+
+    def _gather_config(self) -> AppConfig:
+        target_mode = self.target_mode.currentText()
+        cfg = AppConfig(
+            url=self.target_url.text(),
+            image_path=self.saver_image_path.text(),
+            work_dir=self.cfg.work_dir,
+            idle_to_show_sec=self.saver_idle_delay.value(),
+            active_threshold_sec=self.saver_active_threshold.value(),
+            poll_sec=self.saver_poll.value(),
+            chrome_relaunch_cooldown_sec=self.chrome_relaunch_cooldown.value(),
+            chrome_fullscreen=target_mode in {"fullscreen", "kiosk"},
+            chrome_kiosk=target_mode == "kiosk",
+            saver_enabled=self.saver_enabled.isChecked(),
+            chrome_repeat=self.cfg.chrome_repeat,
+            ui_theme=self.ui_theme.currentText(),
+            saver_image_mode=self.saver_mode.currentText(),
+            audio_url=self.audio_url.text(),
+            audio_enabled=self.audio_enabled.isChecked(),
+            audio_window_mode=self.audio_mode.currentText(),
+            audio_start_delay_sec=self.audio_start_delay.value(),
+            audio_relaunch_cooldown_sec=self.audio_relaunch_cooldown.value(),
+            target_enabled=self.target_enabled.isChecked(),
+            target_window_mode=target_mode,
+            target_start_delay_sec=self.target_start_delay.value(),
+            target_relaunch_cooldown_sec=self.target_relaunch_cooldown.value(),
+            target_refocus_interval_sec=self.target_refocus_interval.value(),
+            saver_start_delay_sec=self.saver_start_delay.value(),
+            notice_enabled=self.notice_enabled.isChecked(),
+        )
+        return cfg
+
+    def _save_config(self):
+        self.cfg = self._gather_config()
+        save_config(self.cfg)
+
+    def _start_workers(self):
+        self._save_config()
+        cfg = self.cfg
+        if cfg.audio_enabled:
+            self.process_manager.start("audio")
+        if cfg.target_enabled:
+            self.process_manager.start("target")
         if cfg.saver_enabled:
-            if idle <= cfg.active_threshold_sec:
-                self._saver.hide()
-            elif idle >= cfg.idle_to_show_sec:
-                self._saver.show()
-        else:
-            self._saver.hide()
+            self.process_manager.start("saver")
 
-        self._saver.pump()
-        self._schedule_tick()
+    def _stop_workers(self):
+        self.process_manager.stop_all()
 
-    def _build_icon_image(self) -> Image.Image:
-        size = 64
-        img = Image.new("RGBA", (size, size), (30, 30, 30, 255))
-        for i in range(8, size - 8):
-            img.putpixel((i, 12), (255, 255, 255, 255))
-            img.putpixel((i, size - 12), (255, 255, 255, 255))
-        for j in range(12, size - 12):
-            img.putpixel((8, j), (255, 255, 255, 255))
-            img.putpixel((size - 8, j), (255, 255, 255, 255))
-        return img
 
-    def _open_settings(self, icon=None, item=None):
-        self.root.after(0, self._show_settings_window)
-
-    def _show_settings_window(self):
-        if self._settings_window and tk.Toplevel.winfo_exists(self._settings_window):
-            self._settings_window.lift()
-            return
-
-        cfg = self.cfg
-        window = tk.Toplevel(self.root)
-        window.title("AutoWake 설정")
-        window.geometry("640x520")
-        window.resizable(False, False)
-        self._settings_window = window
-
-        style = ttk.Style(window)
-        for theme in ("clam", "vista", "xpnative"):
-            try:
-                style.theme_use(theme)
-                break
-            except tk.TclError:
-                continue
-
-        theme_palette = cfg.ui_theme if cfg.ui_theme in ("light", "dark") else "light"
-        if theme_palette == "dark":
-            colors = {
-                "bg": "#0f172a",
-                "card": "#111827",
-                "surface": "#1f2937",
-                "accent": "#38bdf8",
-                "text": "#e2e8f0",
-                "muted": "#94a3b8",
-                "border": "#334155",
-            }
-        else:
-            colors = {
-                "bg": "#f8fafc",
-                "card": "#ffffff",
-                "surface": "#eef2ff",
-                "accent": "#6366f1",
-                "text": "#0f172a",
-                "muted": "#475569",
-                "border": "#cbd5f5",
-            }
-
-        window.configure(background=colors["bg"])
-        style.configure("TFrame", background=colors["bg"])
-        style.configure("Card.TFrame", background=colors["card"])
-        style.configure("Surface.TFrame", background=colors["surface"])
-        style.configure("TLabel", background=colors["surface"], foreground=colors["text"])
-        style.configure("Desc.TLabel", background=colors["surface"], foreground=colors["muted"])
-        style.configure("Header.TLabel", font=("Segoe UI", 16, "bold"), background=colors["card"])
-        style.configure("Section.TLabelframe", padding=12, background=colors["surface"])
-        style.configure(
-            "Section.TLabelframe.Label",
-            font=("Segoe UI", 10, "bold"),
-            background=colors["surface"],
-            foreground=colors["text"],
-        )
-        style.configure("TCheckbutton", background=colors["surface"], foreground=colors["text"])
-        style.configure("TRadiobutton", background=colors["surface"], foreground=colors["text"])
-        style.configure("TNotebook", background=colors["bg"], borderwidth=0)
-        style.configure(
-            "TNotebook.Tab",
-            background=colors["card"],
-            foreground=colors["muted"],
-            padding=(16, 8),
-        )
-        style.map(
-            "TNotebook.Tab",
-            background=[("selected", colors["surface"])],
-            foreground=[("selected", colors["text"])],
-        )
-        style.configure(
-            "Primary.TButton",
-            font=("Segoe UI", 10, "bold"),
-            background=colors["accent"],
-            foreground="#ffffff",
-            padding=(14, 6),
-            borderwidth=0,
-        )
-        style.map(
-            "Primary.TButton",
-            background=[("active", "#818cf8"), ("pressed", "#4f46e5")],
-            foreground=[("active", "#ffffff")],
-        )
-        style.configure(
-            "Ghost.TButton",
-            background=colors["surface"],
-            foreground=colors["text"],
-            padding=(12, 6),
-            borderwidth=0,
-        )
-        style.map(
-            "Ghost.TButton",
-            background=[("active", colors["card"])],
-            foreground=[("active", colors["text"])],
-        )
-
-        frm = ttk.Frame(window, padding=16, style="TFrame")
-        frm.pack(fill="both", expand=True)
-
-        header = ttk.Frame(frm, style="Card.TFrame", padding=16)
-        header.pack(fill="x")
-        ttk.Label(header, text="AutoWake 설정", style="Header.TLabel").pack(
-            side="left"
-        )
-        ttk.Label(
-            header,
-            text="설정은 자동 저장됩니다.",
-            style="Desc.TLabel",
-        ).pack(side="left", padx=12)
-
-        ttk.Separator(frm).pack(fill="x", pady=12)
-
-        vars_map = {
-            "url": tk.StringVar(value=cfg.url),
-            "image_path": tk.StringVar(value=cfg.image_path),
-            "idle_to_show_sec": tk.DoubleVar(value=cfg.idle_to_show_sec),
-            "active_threshold_sec": tk.DoubleVar(value=cfg.active_threshold_sec),
-            "poll_sec": tk.DoubleVar(value=cfg.poll_sec),
-            "chrome_relaunch_cooldown_sec": tk.DoubleVar(
-                value=cfg.chrome_relaunch_cooldown_sec
-            ),
-            "chrome_fullscreen": tk.BooleanVar(value=cfg.chrome_fullscreen),
-            "chrome_kiosk": tk.BooleanVar(value=cfg.chrome_kiosk),
-            "saver_enabled": tk.BooleanVar(value=cfg.saver_enabled),
-            "chrome_repeat": tk.BooleanVar(value=cfg.chrome_repeat),
-            "ui_theme": tk.StringVar(value=theme_palette),
-            "saver_image_mode": tk.StringVar(value=cfg.saver_image_mode),
-        }
-
-        def apply_config():
-            new_cfg = AppConfig(
-                url=vars_map["url"].get(),
-                image_path=vars_map["image_path"].get(),
-                work_dir=cfg.work_dir,
-                idle_to_show_sec=vars_map["idle_to_show_sec"].get(),
-                active_threshold_sec=vars_map["active_threshold_sec"].get(),
-                poll_sec=vars_map["poll_sec"].get(),
-                chrome_relaunch_cooldown_sec=vars_map[
-                    "chrome_relaunch_cooldown_sec"
-                ].get(),
-                chrome_fullscreen=vars_map["chrome_fullscreen"].get(),
-                chrome_kiosk=vars_map["chrome_kiosk"].get(),
-                saver_enabled=vars_map["saver_enabled"].get(),
-                chrome_repeat=vars_map["chrome_repeat"].get(),
-                ui_theme=vars_map["ui_theme"].get(),
-                saver_image_mode=vars_map["saver_image_mode"].get(),
-            )
-            self.update_config(new_cfg)
-
-        def on_change(*_args):
-            apply_config()
-
-        for key, var in vars_map.items():
-            var.trace_add("write", on_change)
-
-        notebook = ttk.Notebook(frm)
-        notebook.pack(fill="both", expand=True)
-
-        tab_general = ttk.Frame(notebook, padding=12, style="TFrame")
-        tab_saver = ttk.Frame(notebook, padding=12, style="TFrame")
-        tab_chrome = ttk.Frame(notebook, padding=12, style="TFrame")
-        notebook.add(tab_general, text="일반")
-        notebook.add(tab_saver, text="세이버")
-        notebook.add(tab_chrome, text="크롬")
-
-        def browse_image():
-            path = filedialog.askopenfilename(
-                title="이미지 파일 선택",
-                filetypes=[("Image files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif")],
-            )
-            if path:
-                vars_map["image_path"].set(path)
-
-        def import_config():
-            path = filedialog.askopenfilename(
-                title="설정 파일 불러오기",
-                filetypes=[("JSON files", "*.json")],
-            )
-            if not path:
-                return
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                imported = AppConfig.from_dict(data)
-                vars_map["url"].set(imported.url)
-                vars_map["image_path"].set(imported.image_path)
-                vars_map["idle_to_show_sec"].set(imported.idle_to_show_sec)
-                vars_map["active_threshold_sec"].set(imported.active_threshold_sec)
-                vars_map["poll_sec"].set(imported.poll_sec)
-                vars_map["chrome_relaunch_cooldown_sec"].set(
-                    imported.chrome_relaunch_cooldown_sec
-                )
-                vars_map["chrome_fullscreen"].set(imported.chrome_fullscreen)
-                vars_map["chrome_kiosk"].set(imported.chrome_kiosk)
-                vars_map["saver_enabled"].set(imported.saver_enabled)
-                vars_map["chrome_repeat"].set(imported.chrome_repeat)
-                vars_map["ui_theme"].set(imported.ui_theme)
-                vars_map["saver_image_mode"].set(imported.saver_image_mode)
-            except Exception as exc:
-                log(f"IMPORT config error: {exc}")
-
-        def export_config():
-            path = filedialog.asksaveasfilename(
-                title="설정 파일 저장",
-                defaultextension=".json",
-                filetypes=[("JSON files", "*.json")],
-                initialfile="autowake_config.json",
-            )
-            if not path:
-                return
-            try:
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(asdict(self.cfg), f, ensure_ascii=False, indent=2)
-            except Exception as exc:
-                log(f"EXPORT config error: {exc}")
-
-        general_box = ttk.Labelframe(
-            tab_general, text="기본 정보", style="Section.TLabelframe"
-        )
-        general_box.pack(fill="x", pady=6)
-        ttk.Label(general_box, text="시작 URL").grid(row=0, column=0, sticky="w")
-        ttk.Entry(general_box, textvariable=vars_map["url"], width=60).grid(
-            row=0, column=1, columnspan=2, sticky="ew", pady=4
-        )
-        ttk.Label(
-            general_box,
-            text="전체화면으로 열릴 웹 페이지 주소를 입력하세요.",
-            style="Desc.TLabel",
-        ).grid(row=1, column=1, columnspan=2, sticky="w", pady=(0, 6))
-
-        ttk.Label(general_box, text="테마").grid(row=2, column=0, sticky="w")
-        theme_select = ttk.Combobox(
-            general_box,
-            textvariable=vars_map["ui_theme"],
-            values=["light", "dark"],
-            state="readonly",
-            width=12,
-        )
-        theme_select.grid(row=2, column=1, sticky="w", pady=4)
-        ttk.Label(
-            general_box,
-            text="설정 UI 색감을 선택하세요.",
-            style="Desc.TLabel",
-        ).grid(row=3, column=1, columnspan=2, sticky="w", pady=(0, 6))
-        general_box.columnconfigure(1, weight=1)
-
-        saver_box = ttk.Labelframe(
-            tab_saver, text="세이버 동작", style="Section.TLabelframe"
-        )
-        saver_box.pack(fill="x", pady=6)
-        ttk.Checkbutton(
-            saver_box, text="세이버 사용", variable=vars_map["saver_enabled"]
-        ).grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(saver_box, text="이미지 소스").grid(row=1, column=0, sticky="w")
-        ttk.Radiobutton(
-            saver_box,
-            text="사용자 이미지 경로",
-            variable=vars_map["saver_image_mode"],
-            value="path",
-        ).grid(row=1, column=1, sticky="w")
-        ttk.Label(saver_box, text="사용자 이미지 경로").grid(
-            row=2, column=0, sticky="w"
-        )
-        ttk.Entry(
-            saver_box, textvariable=vars_map["image_path"], width=44
-        ).grid(row=2, column=1, sticky="ew", pady=4)
-        ttk.Button(saver_box, text="찾기", command=browse_image).grid(
-            row=2, column=2, padx=6
-        )
-        ttk.Radiobutton(
-            saver_box,
-            text="패키징 기본 이미지",
-            variable=vars_map["saver_image_mode"],
-            value="bundled",
-        ).grid(row=3, column=1, sticky="w")
-        ttk.Radiobutton(
-            saver_box,
-            text="에러 안내 이미지",
-            variable=vars_map["saver_image_mode"],
-            value="generated",
-        ).grid(row=4, column=1, sticky="w")
-        ttk.Label(saver_box, text="세이버 표시 대기(초)").grid(
-            row=5, column=0, sticky="w"
-        )
-        ttk.Spinbox(
-            saver_box,
-            from_=1,
-            to=3600,
-            textvariable=vars_map["idle_to_show_sec"],
-            width=10,
-        ).grid(row=5, column=1, sticky="w", pady=4)
-        ttk.Label(saver_box, text="활동 감지 임계(초)").grid(
-            row=6, column=0, sticky="w"
-        )
-        ttk.Spinbox(
-            saver_box,
-            from_=0.1,
-            to=60,
-            increment=0.1,
-            textvariable=vars_map["active_threshold_sec"],
-            width=10,
-        ).grid(row=6, column=1, sticky="w", pady=4)
-        ttk.Label(saver_box, text="루프 주기(초)").grid(
-            row=7, column=0, sticky="w"
-        )
-        ttk.Spinbox(
-            saver_box,
-            from_=0.1,
-            to=10,
-            increment=0.1,
-            textvariable=vars_map["poll_sec"],
-            width=10,
-        ).grid(row=7, column=1, sticky="w", pady=4)
-        saver_box.columnconfigure(1, weight=1)
-
-        chrome_box = ttk.Labelframe(
-            tab_chrome, text="크롬 실행", style="Section.TLabelframe"
-        )
-        chrome_box.pack(fill="x", pady=6)
-        ttk.Checkbutton(
-            chrome_box, text="크롬 전체화면 시작", variable=vars_map["chrome_fullscreen"]
-        ).grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Checkbutton(
-            chrome_box, text="크롬 키오스크 모드", variable=vars_map["chrome_kiosk"]
-        ).grid(row=1, column=0, columnspan=2, sticky="w")
-        ttk.Label(chrome_box, text="크롬 재실행 모드").grid(
-            row=2, column=0, sticky="w"
-        )
-        ttk.Radiobutton(
-            chrome_box, text="반복", variable=vars_map["chrome_repeat"], value=True
-        ).grid(row=2, column=1, sticky="w")
-        ttk.Radiobutton(
-            chrome_box, text="1회만", variable=vars_map["chrome_repeat"], value=False
-        ).grid(row=2, column=2, sticky="w")
-        ttk.Label(chrome_box, text="크롬 재실행 쿨다운(초)").grid(
-            row=3, column=0, sticky="w"
-        )
-        ttk.Spinbox(
-            chrome_box,
-            from_=1,
-            to=3600,
-            textvariable=vars_map["chrome_relaunch_cooldown_sec"],
-            width=10,
-        ).grid(row=3, column=1, sticky="w", pady=4)
-
-        footer = ttk.Frame(frm, style="TFrame")
-        footer.pack(fill="x", pady=8)
-
-        def restore_defaults():
-            defaults = AppConfig()
-            vars_map["url"].set(defaults.url)
-            vars_map["image_path"].set(defaults.image_path)
-            vars_map["idle_to_show_sec"].set(defaults.idle_to_show_sec)
-            vars_map["active_threshold_sec"].set(defaults.active_threshold_sec)
-            vars_map["poll_sec"].set(defaults.poll_sec)
-            vars_map["chrome_relaunch_cooldown_sec"].set(
-                defaults.chrome_relaunch_cooldown_sec
-            )
-            vars_map["chrome_fullscreen"].set(defaults.chrome_fullscreen)
-            vars_map["chrome_kiosk"].set(defaults.chrome_kiosk)
-            vars_map["saver_enabled"].set(defaults.saver_enabled)
-            vars_map["chrome_repeat"].set(defaults.chrome_repeat)
-            vars_map["ui_theme"].set(defaults.ui_theme)
-            vars_map["saver_image_mode"].set(defaults.saver_image_mode)
-
-        def open_work_dir():
-            try:
-                os.startfile(cfg.work_dir)
-            except Exception as e:
-                log(f"OPEN work dir error: {e}")
-
-        ttk.Button(
-            footer,
-            text="기본값 복원",
-            command=restore_defaults,
-            style="Ghost.TButton",
-        ).pack(side="left")
-        ttk.Button(
-            footer,
-            text="설정 파일 위치",
-            command=open_work_dir,
-            style="Ghost.TButton",
-        ).pack(side="left", padx=6)
-        ttk.Button(
-            footer,
-            text="불러오기",
-            command=import_config,
-            style="Ghost.TButton",
-        ).pack(side="left")
-        ttk.Button(
-            footer,
-            text="내보내기",
-            command=export_config,
-            style="Ghost.TButton",
-        ).pack(side="left", padx=6)
-        ttk.Button(
-            footer,
-            text="닫기",
-            command=window.destroy,
-            style="Primary.TButton",
-        ).pack(side="right")
-
-    def _exit_app(self, icon=None, item=None):
-        self.stop()
-        if self._icon:
-            self._icon.stop()
-        self.root.after(0, self.root.destroy)
-
-    def _menu(self):
-        def can_start(_item):
-            return not self._running
-
-        def can_stop(_item):
-            return self._running
-
-        def can_exit(_item):
-            return True
-
-        return pystray.Menu(
-            pystray.MenuItem(
-                "실행", lambda icon, item: self.root.after(0, self.start), enabled=can_start
-            ),
-            pystray.MenuItem(
-                "중지", lambda icon, item: self.root.after(0, self.stop), enabled=can_stop
-            ),
-            pystray.MenuItem("설정", self._open_settings),
-            pystray.MenuItem("종료", self._exit_app, enabled=can_exit),
-        )
-
-    def _refresh_menu(self):
-        if self._icon:
-            try:
-                self._icon.update_menu()
-            except Exception:
-                pass
+class AudioWorker:
+    def __init__(self):
+        self.cfg = load_config()
+        self.proc: Optional[subprocess.Popen] = None
+        self.last_launch = 0.0
+        self.pending_launch_at: Optional[float] = None
 
     def run(self):
-        self.start()
-        self._icon = pystray.Icon(
-            "AutoWake",
-            self._build_icon_image(),
-            "AutoWake",
-            self._menu(),
-        )
-        self._icon.run_detached()
-        self.root.mainloop()
+        while True:
+            self.cfg = load_config()
+            if not self.cfg.audio_enabled:
+                self._stop_proc()
+                self.pending_launch_at = None
+                time.sleep(self.cfg.poll_sec)
+                continue
+            if self.proc is None or self.proc.poll() is not None:
+                now = time.time()
+                if now - self.last_launch >= self.cfg.audio_relaunch_cooldown_sec:
+                    if self.pending_launch_at is None:
+                        self.pending_launch_at = now + self.cfg.audio_start_delay_sec
+            if self.pending_launch_at is not None:
+                now = time.time()
+                if now >= self.pending_launch_at:
+                    url = ensure_youtube_autoplay(self.cfg.audio_url)
+                    profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "audio")
+                    os.makedirs(profile, exist_ok=True)
+                    self.proc = launch_chrome(url, profile, self.cfg.audio_window_mode, True)
+                    self.last_launch = time.time()
+                    self.pending_launch_at = None
+            time.sleep(max(self.cfg.poll_sec, 0.2))
+
+    def _stop_proc(self):
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+        self.proc = None
+
+
+class TargetWorker(QtCore.QObject):
+    def __init__(self):
+        super().__init__()
+        self.cfg = load_config()
+        self.proc: Optional[subprocess.Popen] = None
+        self.last_launch = 0.0
+        self.last_refocus = 0.0
+        self.pending_launch_at: Optional[float] = None
+        self.palette = build_palette()
+        self.notice = NoticeWindow(self.palette)
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self._tick)
+        self.timer.start(int(max(self.cfg.poll_sec, 0.2) * 1000))
+
+    def _tick(self):
+        self.cfg = load_config()
+        if self.cfg.notice_enabled and self.cfg.target_enabled:
+            if not self.notice.isVisible():
+                self.notice.show_centered()
+        else:
+            self.notice.hide()
+
+        if not self.cfg.target_enabled:
+            self._stop_proc()
+            self.pending_launch_at = None
+            return
+
+        if self.proc is None or self.proc.poll() is not None:
+            now = time.time()
+            if now - self.last_launch >= self.cfg.target_relaunch_cooldown_sec:
+                if self.pending_launch_at is None:
+                    self.pending_launch_at = now + self.cfg.target_start_delay_sec
+
+        if self.pending_launch_at is not None:
+            now = time.time()
+            if now >= self.pending_launch_at:
+                profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "target")
+                os.makedirs(profile, exist_ok=True)
+                self.proc = launch_chrome(
+                    self.cfg.url,
+                    profile,
+                    self.cfg.target_window_mode,
+                    False,
+                )
+                self.last_launch = time.time()
+                self.pending_launch_at = None
+
+        if self.proc and self.proc.poll() is None:
+            now = time.time()
+            if now - self.last_refocus >= self.cfg.target_refocus_interval_sec:
+                keep_window_on_top(self.proc.pid)
+                self.last_refocus = now
+
+    def _stop_proc(self):
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+        self.proc = None
+
+
+class SaverWorker(QtCore.QObject):
+    def __init__(self):
+        super().__init__()
+        self.cfg = load_config()
+        self.palette = build_palette()
+        self.window = SaverWindow(self.cfg, self.palette)
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self._tick)
+        self.timer.start(int(max(self.cfg.poll_sec, 0.2) * 1000))
+        self.started_at = time.time()
+
+    def _tick(self):
+        self.cfg = load_config()
+        self.window.cfg = self.cfg
+        if not self.cfg.saver_enabled:
+            self.window.hide()
+            return
+        if time.time() - self.started_at < self.cfg.saver_start_delay_sec:
+            return
+        idle = seconds_since_last_input()
+        if idle <= self.cfg.active_threshold_sec:
+            self.window.hide()
+        elif idle >= self.cfg.idle_to_show_sec:
+            if not self.window.isVisible():
+                self.window.show_fullscreen()
+        if self.window.isVisible():
+            self.window.refresh()
+
+
+def run_audio_worker():
+    AudioWorker().run()
+
+
+def run_target_worker():
+    app = QtWidgets.QApplication(sys.argv)
+    worker = TargetWorker()
+    app.aboutToQuit.connect(worker.notice.close)
+    app.exec()
+
+
+def run_saver_worker():
+    app = QtWidgets.QApplication(sys.argv)
+    worker = SaverWorker()
+    app.aboutToQuit.connect(worker.window.close)
+    app.exec()
+
+
+def run_ui():
+    app = QtWidgets.QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    app.exec()
 
 
 def main():
-    app = AutoWakeApp()
-    app.run()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=["ui", "audio", "target", "saver"], default="ui")
+    args = parser.parse_args()
+
+    if args.mode == "audio":
+        run_audio_worker()
+    elif args.mode == "target":
+        run_target_worker()
+    elif args.mode == "saver":
+        run_saver_worker()
+    else:
+        run_ui()
 
 
 if __name__ == "__main__":
     try:
         main()
-    except SystemExit as e:
-        # 이미 실행 중이면 조용히 종료
+    except SystemExit:
         sys.exit(0)
-    except Exception as e:
-        # 예외 로그 남기고 종료
+    except Exception as exc:
         try:
-            log(f"FATAL: {e}")
+            log(f"FATAL: {exc}")
         except Exception:
             pass
         sys.exit(1)
