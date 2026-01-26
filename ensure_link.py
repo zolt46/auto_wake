@@ -181,30 +181,42 @@ def build_palette(theme: str, accent_theme: str) -> dict:
         "sky": ("#0ea5e9", "#38bdf8"),
         "indigo": ("#6366f1", "#818cf8"),
         "emerald": ("#10b981", "#34d399"),
+        "rose": ("#f43f5e", "#fb7185"),
+        "amber": ("#f59e0b", "#fbbf24"),
+        "teal": ("#14b8a6", "#2dd4bf"),
+        "violet": ("#8b5cf6", "#a78bfa"),
     }
     accent, accent_soft = accents.get(accent_theme, accents["sky"])
     if theme == "dark":
         return {
-            "bg": "#0f172a",
-            "bg_card": "#111827",
-            "bg_card_alt": "#1e293b",
+            "bg": "#111827",
+            "bg_card": "#1f2937",
+            "bg_card_alt": "#273449",
             "accent": accent,
             "accent_soft": accent_soft,
-            "text_primary": "#f8fafc",
-            "text_muted": "#cbd5f5",
+            "text_primary": "#f9fafb",
+            "text_muted": "#d1d5db",
             "border": "#334155",
             "bg_dark": "#0b1220",
+            "tab_bg": "#111827",
+            "tab_active": "#1f2937",
+            "tab_text": "#e5e7eb",
+            "topbar": "#1f2937",
         }
     return {
-        "bg": "#f8fafc",
+        "bg": "#f1f5f9",
         "bg_card": "#ffffff",
-        "bg_card_alt": "#eef2ff",
+        "bg_card_alt": "#e2e8f0",
         "accent": accent,
         "accent_soft": accent_soft,
         "text_primary": "#0f172a",
-        "text_muted": "#475569",
-        "border": "#e2e8f0",
+        "text_muted": "#334155",
+        "border": "#cbd5f5",
         "bg_dark": "#e2e8f0",
+        "tab_bg": "#e2e8f0",
+        "tab_active": "#ffffff",
+        "tab_text": "#1f2937",
+        "topbar": "#ffffff",
     }
 
 
@@ -526,17 +538,24 @@ class MainWindow(QtWidgets.QMainWindow):
         palette = self.palette
         stylesheet = f"""
             QMainWindow {{ background: {palette['bg']}; }}
-            QLabel {{ color: {palette['text_primary']}; font-family: 'Segoe UI'; }}
-            #TopBar {{ background: {palette['bg_card']}; border-radius: 12px; }}
-            #TopTitle {{ font-size: 20px; font-weight: 600; }}
-            #TopSub {{ color: {palette['text_muted']}; }}
+            QLabel {{ color: {palette['text_primary']}; font-family: 'Pretendard', 'Segoe UI', 'Noto Sans KR', sans-serif; font-size: 13px; font-weight: 500; }}
+            #TopBar {{ background: {palette['topbar']}; border-radius: 14px; border: 1px solid {palette['border']}; }}
+            #TopTitle {{ font-size: 22px; font-weight: 700; }}
+            #TopSub {{ color: {palette['text_muted']}; font-size: 13px; font-weight: 600; }}
+            #StatePill {{
+                background: {palette['bg_card_alt']};
+                border: 1px solid {palette['border']};
+                padding: 4px 10px;
+                border-radius: 12px;
+                font-weight: 700;
+            }}
             #FancyCard {{
                 background: {palette['bg_card']};
                 border-radius: 14px;
                 border: 1px solid {palette['border']};
             }}
-            #CardTitle {{ font-size: 16px; font-weight: 600; }}
-            #CardSubtitle {{ color: {palette['text_muted']}; }}
+            #CardTitle {{ font-size: 16px; font-weight: 700; }}
+            #CardSubtitle {{ color: {palette['text_muted']}; font-size: 13px; font-weight: 500; }}
             QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
                 background: {palette['bg_card_alt']};
                 border: 1px solid {palette['border']};
@@ -550,12 +569,29 @@ class MainWindow(QtWidgets.QMainWindow):
                 border-radius: 10px;
                 padding: 8px 14px;
                 color: #0b1220;
-                font-weight: 600;
+                font-weight: 700;
+                font-size: 13px;
             }}
             QPushButton:hover {{ background: {palette['accent_soft']}; }}
+            QPushButton:disabled {{
+                background: {palette['bg_card_alt']};
+                color: {palette['text_muted']};
+            }}
             QPushButton#GhostButton {{
                 background: {palette['bg_card_alt']};
                 color: {palette['text_primary']};
+            }}
+            QPushButton#StartButton {{
+                background: {palette['accent']};
+                color: #0b1220;
+            }}
+            QPushButton#StopButton {{
+                background: #f97316;
+                color: #fff7ed;
+            }}
+            QPushButton#StopButton:disabled {{
+                background: {palette['bg_card_alt']};
+                color: {palette['text_muted']};
             }}
             QCheckBox::indicator {{ width: 46px; height: 24px; }}
             QCheckBox::indicator:unchecked {{
@@ -588,6 +624,24 @@ class MainWindow(QtWidgets.QMainWindow):
             }}
             #NoticeTitle {{ font-size: 18px; font-weight: 700; }}
             #NoticeMessage {{ color: {palette['text_muted']}; }}
+            QTabWidget::pane {{
+                border: 1px solid {palette['border']};
+                border-radius: 12px;
+                background: {palette['bg_card']};
+            }}
+            QTabBar::tab {{
+                background: {palette['tab_bg']};
+                color: {palette['tab_text']};
+                padding: 8px 16px;
+                margin-right: 6px;
+                border-top-left-radius: 10px;
+                border-top-right-radius: 10px;
+                font-weight: 700;
+            }}
+            QTabBar::tab:selected {{
+                background: {palette['tab_active']};
+                color: {palette['text_primary']};
+            }}
         """
         self.setStyleSheet(stylesheet)
         if self.tray_icon:
@@ -614,11 +668,12 @@ class MainWindow(QtWidgets.QMainWindow):
         top_layout.addLayout(title_box)
         top_layout.addStretch()
         self.state_label = QtWidgets.QLabel("중지됨")
-        self.state_label.setObjectName("TopSub")
+        self.state_label.setObjectName("StatePill")
         top_layout.addWidget(self.state_label)
         self.start_button = QtWidgets.QPushButton("웨이크업 시작")
         self.stop_button = QtWidgets.QPushButton("웨이크업 중지")
-        self.stop_button.setObjectName("GhostButton")
+        self.start_button.setObjectName("StartButton")
+        self.stop_button.setObjectName("StopButton")
         self.start_button.clicked.connect(self._start_workers)
         self.stop_button.clicked.connect(self._stop_workers)
         top_layout.addWidget(self.start_button)
@@ -765,7 +820,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui_theme = QtWidgets.QComboBox()
         self.ui_theme.addItems(["light", "dark"])
         self.accent_theme = QtWidgets.QComboBox()
-        self.accent_theme.addItems(["sky", "indigo", "emerald"])
+        self.accent_theme.addItems(["sky", "indigo", "emerald", "rose", "amber", "teal", "violet"])
         self.admin_password = QtWidgets.QLineEdit()
         self.admin_password.setEchoMode(QtWidgets.QLineEdit.Password)
         self.admin_password_confirm = QtWidgets.QLineEdit()
@@ -848,9 +903,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_tray_actions()
 
     def _tray_activated(self, reason: QtWidgets.QSystemTrayIcon.ActivationReason):
-        if reason == QtWidgets.QSystemTrayIcon.Trigger and self.tray_menu:
+        if reason == QtWidgets.QSystemTrayIcon.Context and self.tray_menu:
             self.tray_menu.popup(QtGui.QCursor.pos())
-        elif reason == QtWidgets.QSystemTrayIcon.Context:
+        elif reason == QtWidgets.QSystemTrayIcon.Trigger:
             self._request_settings_open()
 
     def _update_tray_actions(self):
@@ -976,9 +1031,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _update_run_state_labels(self):
         if self.is_running:
-            self.state_label.setText("시행 중")
+            self.state_label.setText("현재 웨이크업이 실행 중입니다")
         else:
-            self.state_label.setText("중지됨")
+            self.state_label.setText("현재 웨이크업이 중지된 상태입니다")
         self.start_button.setEnabled(not self.is_running)
         self.stop_button.setEnabled(self.is_running)
         self._update_tray_actions()
