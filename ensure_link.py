@@ -35,6 +35,13 @@ def log(msg: str) -> None:
         file.write(f"{datetime.now()} - {msg}\n")
 
 
+def ensure_streams() -> None:
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
+
 def resource_path(relative_path: str) -> str:
     base_path = getattr(sys, "_MEIPASS", os.path.dirname(__file__))
     return os.path.join(base_path, relative_path)
@@ -427,12 +434,12 @@ class PasswordDialog(QtWidgets.QDialog):
         cancel = QtWidgets.QPushButton("취소")
         ok = QtWidgets.QPushButton("확인")
         cancel.clicked.connect(self.reject)
+        ok.clicked.connect(self._accept_with_validation)
         buttons.addStretch()
         buttons.addWidget(cancel)
         buttons.addWidget(ok)
         layout.addLayout(buttons)
-        ok.clicked.disconnect()
-        ok.clicked.connect(self._accept_with_validation)
+        self.input.setFocus()
 
     def _accept_with_validation(self):
         if not self.input.text():
@@ -1052,10 +1059,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_stop.setEnabled(self.is_running)
 
     def _request_settings_open(self):
+        if self.isVisible():
+            self.raise_()
+            self.activateWindow()
+            return
         dialog = PasswordDialog(self)
         if dialog.exec() != QtWidgets.QDialog.Accepted:
             return
-        if dialog.input.text() != self.cfg.admin_password:
+        if dialog.input.text().strip() != self.cfg.admin_password:
             QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호가 일치하지 않습니다.")
             return
         self.showNormal()
@@ -1369,10 +1380,12 @@ class SaverWorker(QtCore.QObject):
 
 
 def run_audio_worker():
+    ensure_streams()
     AudioWorker().run()
 
 
 def run_target_worker():
+    ensure_streams()
     app = QtWidgets.QApplication(sys.argv)
     worker = TargetWorker()
     app.aboutToQuit.connect(worker.notice.close)
@@ -1380,6 +1393,7 @@ def run_target_worker():
 
 
 def run_saver_worker():
+    ensure_streams()
     app = QtWidgets.QApplication(sys.argv)
     worker = SaverWorker()
     app.aboutToQuit.connect(worker.window.close)
@@ -1387,6 +1401,7 @@ def run_saver_worker():
 
 
 def run_ui():
+    ensure_streams()
     app = QtWidgets.QApplication(sys.argv)
     window = MainWindow()
     window.hide()
