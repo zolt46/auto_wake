@@ -5,6 +5,7 @@ from dataclasses import dataclass, asdict
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -19,7 +20,6 @@ DEFAULT_AUDIO_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 DEFAULT_LOCAL_IMAGE = r"C:\AutoWake\default_saver.png"
 
 WORK_DIR = r"C:\AutoWake"
-CONFIG_FILE = os.path.join(WORK_DIR, "config.json")
 DEFAULT_BUNDLED_IMAGE = os.path.join("assets", "default_saver.png")
 
 CHROME_CANDIDATES = [
@@ -27,6 +27,10 @@ CHROME_CANDIDATES = [
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
 ]
 # ==========================================
+
+
+def config_file_path(work_dir: str) -> str:
+    return os.path.join(work_dir, "config.json")
 
 
 def log(msg: str) -> None:
@@ -180,14 +184,21 @@ def verify_password(password: str, password_hash: str, salt: str) -> bool:
 
 def load_config() -> AppConfig:
     os.makedirs(WORK_DIR, exist_ok=True)
-    if not os.path.exists(CONFIG_FILE):
+    primary_path = config_file_path(WORK_DIR)
+    if not os.path.exists(primary_path):
         cfg = AppConfig()
         save_config(cfg)
         return cfg
     try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as file:
+        with open(primary_path, "r", encoding="utf-8") as file:
             data = json.load(file)
         cfg = AppConfig.from_dict(data)
+        if cfg.work_dir and cfg.work_dir != WORK_DIR:
+            alt_path = config_file_path(cfg.work_dir)
+            if os.path.exists(alt_path):
+                with open(alt_path, "r", encoding="utf-8") as file:
+                    data = json.load(file)
+                cfg = AppConfig.from_dict(data)
         if not cfg.password_hash:
             raw_password = data.get("admin_password", "") or "0000"
             cfg.password_hash, cfg.password_salt = create_password_hash(raw_password)
@@ -200,10 +211,11 @@ def load_config() -> AppConfig:
 
 
 def save_config(cfg: AppConfig) -> None:
-    os.makedirs(WORK_DIR, exist_ok=True)
+    work_dir = cfg.work_dir or WORK_DIR
+    os.makedirs(work_dir, exist_ok=True)
     data = asdict(cfg)
     try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as file:
+        with open(config_file_path(work_dir), "w", encoding="utf-8") as file:
             json.dump(data, file, ensure_ascii=False, indent=2)
     except Exception as exc:
         log(f"CONFIG save error: {exc}")
@@ -374,7 +386,9 @@ class StyledToggle(QtWidgets.QAbstractButton):
             "text_muted": "#94a3b8",
             "knob": "#0b1220",
         }
-        self.setMinimumHeight(30)
+        self.setMinimumHeight(32)
+        self.setMinimumWidth(260)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
 
     def set_palette(self, palette: dict) -> None:
         self._palette = {
@@ -390,7 +404,7 @@ class StyledToggle(QtWidgets.QAbstractButton):
         self.update()
 
     def sizeHint(self) -> QtCore.QSize:
-        return QtCore.QSize(240, 32)
+        return QtCore.QSize(280, 32)
 
     def resizeEvent(self, event: QtGui.QResizeEvent):
         super().resizeEvent(event)
@@ -991,8 +1005,8 @@ class MainWindow(QtWidgets.QMainWindow):
         path_row = QtWidgets.QHBoxLayout()
         self.config_path = QtWidgets.QLineEdit()
         self.config_path.setReadOnly(True)
-        open_button = QtWidgets.QPushButton("설정 폴더 열기")
-        open_button.clicked.connect(self._open_work_dir)
+        open_button = QtWidgets.QPushButton("설정 파일 경로 변경")
+        open_button.clicked.connect(self._change_work_dir)
         path_row.addWidget(self.config_path)
         path_row.addWidget(open_button)
         layout.addLayout(path_row)
@@ -1017,6 +1031,29 @@ class MainWindow(QtWidgets.QMainWindow):
             os.startfile(self.cfg.work_dir)
         except Exception as exc:
             log(f"OPEN work dir error: {exc}")
+
+    def _change_work_dir(self):
+        new_dir = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "설정 파일 경로 선택",
+            self.cfg.work_dir or WORK_DIR,
+        )
+        if not new_dir:
+            return
+        try:
+            os.makedirs(new_dir, exist_ok=True)
+            old_path = config_file_path(self.cfg.work_dir)
+            new_path = config_file_path(new_dir)
+            if os.path.exists(old_path) and old_path != new_path:
+                try:
+                    shutil.copy2(old_path, new_path)
+                except Exception as exc:
+                    log(f"CONFIG copy error: {exc}")
+            self.cfg.work_dir = new_dir
+            save_config(self.cfg)
+            self.config_path.setText(new_dir)
+        except Exception as exc:
+            log(f"CHANGE work dir error: {exc}")
 
     def _ensure_default_password(self):
         if not self.cfg.password_hash:
