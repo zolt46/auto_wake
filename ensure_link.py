@@ -327,10 +327,64 @@ def build_notice_message() -> str:
     )
 
 
-class StyledToggle(QtWidgets.QCheckBox):
+class StyledToggle(QtWidgets.QAbstractButton):
     def __init__(self, label: str, parent=None):
-        super().__init__(label, parent)
+        super().__init__(parent)
+        self.setCheckable(True)
         self.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self._label = QtWidgets.QLabel(label, self)
+        self._label.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
+        self._palette = {
+            "accent": "#0ea5e9",
+            "bg_card_alt": "#1f2937",
+            "text_primary": "#f9fafb",
+            "text_muted": "#94a3b8",
+            "knob": "#0b1220",
+        }
+        self.setMinimumHeight(30)
+
+    def set_palette(self, palette: dict) -> None:
+        self._palette = {
+            "accent": palette["accent"],
+            "bg_card_alt": palette["bg_card_alt"],
+            "text_primary": palette["text_primary"],
+            "text_muted": palette["text_muted"],
+            "knob": palette["bg"],
+        }
+        self._label.setStyleSheet(
+            f"color: {palette['text_primary']}; font-weight: 700; font-size: 14px;"
+        )
+        self.update()
+
+    def sizeHint(self) -> QtCore.QSize:
+        return QtCore.QSize(240, 32)
+
+    def resizeEvent(self, event: QtGui.QResizeEvent):
+        super().resizeEvent(event)
+        self._label.setGeometry(0, 0, self.width() - 60, self.height())
+
+    def paintEvent(self, event: QtGui.QPaintEvent):
+        super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        toggle_width = 46
+        toggle_height = 24
+        x = self.width() - toggle_width
+        y = (self.height() - toggle_height) // 2
+        radius = toggle_height / 2
+
+        if self.isChecked():
+            track_color = QtGui.QColor(self._palette["accent"])
+            knob_x = x + toggle_width - toggle_height + 2
+        else:
+            track_color = QtGui.QColor(self._palette["bg_card_alt"])
+            knob_x = x + 2
+
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(track_color)
+        painter.drawRoundedRect(x, y, toggle_width, toggle_height, radius, radius)
+        painter.setBrush(QtGui.QColor(self._palette["knob"]))
+        painter.drawEllipse(QtCore.QRectF(knob_x, y + 2, toggle_height - 4, toggle_height - 4))
 
 
 class FancyCard(QtWidgets.QFrame):
@@ -373,11 +427,18 @@ class PasswordDialog(QtWidgets.QDialog):
         cancel = QtWidgets.QPushButton("취소")
         ok = QtWidgets.QPushButton("확인")
         cancel.clicked.connect(self.reject)
-        ok.clicked.connect(self.accept)
         buttons.addStretch()
         buttons.addWidget(cancel)
         buttons.addWidget(ok)
         layout.addLayout(buttons)
+        ok.clicked.disconnect()
+        ok.clicked.connect(self._accept_with_validation)
+
+    def _accept_with_validation(self):
+        if not self.input.text():
+            self.message.setText("비밀번호를 입력하세요.")
+            return
+        self.accept()
 
 
 class PasswordChangeDialog(QtWidgets.QDialog):
@@ -583,6 +644,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_config_to_ui()
         self._connect_autosave()
         self._setup_tray()
+        self._ensure_default_password()
 
     def _apply_palette(self):
         self.palette = build_palette("dark", self.cfg.accent_theme)
@@ -650,31 +712,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 background: #334155;
                 color: {palette['text_muted']};
             }}
-            QCheckBox {{ font-size: 14px; font-weight: 700; color: {palette['text_primary']}; }}
-            QCheckBox::indicator {{ width: 46px; height: 24px; }}
-            QCheckBox::indicator:unchecked {{
-                border-radius: 12px;
-                background: {palette['bg_card_alt']};
-                border: 1px solid {palette['border']};
-            }}
-            QCheckBox::indicator:checked {{
-                border-radius: 12px;
-                background: {palette['accent']};
-            }}
-            QCheckBox::indicator:unchecked::after {{
-                content: '';
-                width: 18px; height: 18px;
-                margin: 2px;
-                border-radius: 9px;
-                background: {palette['text_muted']};
-            }}
-            QCheckBox::indicator:checked::after {{
-                content: '';
-                width: 18px; height: 18px;
-                margin: 2px 2px 2px 24px;
-                border-radius: 9px;
-                background: {palette['bg']};
-            }}
             #NoticeFrame {{
                 background: {palette['bg_card']};
                 border-radius: 16px;
@@ -704,6 +741,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setStyleSheet(stylesheet)
         if self.tray_icon:
             self.tray_icon.setIcon(self._build_tray_icon())
+        for toggle in getattr(self, "_toggles", []):
+            toggle.set_palette(self.palette)
 
     def _build_ui(self):
         self.setWindowTitle("AutoWake")
@@ -797,6 +836,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_audio_section(self, layout: QtWidgets.QVBoxLayout):
         self.audio_enabled = StyledToggle("음원 창 사용")
+        self._register_toggle(self.audio_enabled)
         layout.addWidget(self.audio_enabled)
 
         form = QtWidgets.QFormLayout()
@@ -821,8 +861,15 @@ class MainWindow(QtWidgets.QMainWindow):
         label.setObjectName("FormLabel")
         return label
 
+    def _register_toggle(self, toggle: StyledToggle) -> None:
+        if not hasattr(self, "_toggles"):
+            self._toggles = []
+        self._toggles.append(toggle)
+        toggle.set_palette(self.palette)
+
     def _build_target_section(self, layout: QtWidgets.QVBoxLayout):
         self.target_enabled = StyledToggle("특정 URL 창 사용")
+        self._register_toggle(self.target_enabled)
         layout.addWidget(self.target_enabled)
 
         form = QtWidgets.QFormLayout()
@@ -847,6 +894,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_saver_section(self, layout: QtWidgets.QVBoxLayout):
         self.saver_enabled = StyledToggle("스크린세이버 사용")
+        self._register_toggle(self.saver_enabled)
         layout.addWidget(self.saver_enabled)
 
         form = QtWidgets.QFormLayout()
@@ -882,6 +930,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_settings_section(self, layout: QtWidgets.QVBoxLayout):
         self.notice_enabled = StyledToggle("안내창 표시")
+        self._register_toggle(self.notice_enabled)
         layout.addWidget(self.notice_enabled)
 
         form = QtWidgets.QFormLayout()
@@ -926,6 +975,11 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as exc:
             log(f"OPEN work dir error: {exc}")
 
+    def _ensure_default_password(self):
+        if not self.cfg.admin_password:
+            self.cfg.admin_password = "0000"
+            save_config(self.cfg)
+
     def _change_password(self):
         dialog = PasswordChangeDialog(self)
         if dialog.exec() != QtWidgets.QDialog.Accepted:
@@ -933,11 +987,17 @@ class MainWindow(QtWidgets.QMainWindow):
         current = dialog.current_password.text()
         new_password = dialog.new_password.text()
         confirm = dialog.confirm_password.text()
+        if not current:
+            QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "현재 비밀번호를 입력하세요.")
+            return
         if current != self.cfg.admin_password:
             QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "현재 비밀번호가 올바르지 않습니다.")
             return
         if not new_password:
             QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "새 비밀번호를 입력하세요.")
+            return
+        if not confirm:
+            QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호 확인을 입력하세요.")
             return
         if new_password != confirm:
             QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호 확인이 일치하지 않습니다.")
@@ -992,13 +1052,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_stop.setEnabled(self.is_running)
 
     def _request_settings_open(self):
-        if self.cfg.admin_password:
-            dialog = PasswordDialog(self)
-            if dialog.exec() != QtWidgets.QDialog.Accepted:
-                return
-            if dialog.input.text() != self.cfg.admin_password:
-                QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호가 일치하지 않습니다.")
-                return
+        dialog = PasswordDialog(self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        if dialog.input.text() != self.cfg.admin_password:
+            QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호가 일치하지 않습니다.")
+            return
         self.showNormal()
         self.resize(self.minimumSize())
         self.raise_()
