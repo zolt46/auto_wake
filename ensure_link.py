@@ -443,11 +443,12 @@ class FancyCard(QtWidgets.QFrame):
 
 
 class PasswordDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, verifier, parent=None):
         super().__init__(parent)
         self.setWindowTitle("보안 확인")
         self.setModal(True)
         self.setFixedSize(320, 180)
+        self._verifier = verifier
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel("설정에 들어가려면 비밀번호를 입력하세요."))
         self.input = QtWidgets.QLineEdit()
@@ -468,8 +469,14 @@ class PasswordDialog(QtWidgets.QDialog):
         self.input.setFocus()
 
     def _accept_with_validation(self):
-        if not self.input.text():
+        value = self.input.text().strip()
+        if not value:
             self.message.setText("비밀번호를 입력하세요.")
+            return
+        if not self._verifier(value):
+            self.message.setText("비밀번호가 올바르지 않습니다.")
+            self.input.selectAll()
+            self.input.setFocus()
             return
         self.accept()
 
@@ -671,6 +678,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_stop: Optional[QtGui.QAction] = None
         self.action_settings: Optional[QtGui.QAction] = None
         self.action_quit: Optional[QtGui.QAction] = None
+        self._password_dialog: Optional[PasswordDialog] = None
         self._build_ui()
         self._apply_palette()
         self._loading = False
@@ -1091,16 +1099,24 @@ class MainWindow(QtWidgets.QMainWindow):
             self.raise_()
             self.activateWindow()
             return
-        dialog = PasswordDialog(self)
-        if dialog.exec() != QtWidgets.QDialog.Accepted:
+        if self._password_dialog and self._password_dialog.isVisible():
+            self._password_dialog.raise_()
+            self._password_dialog.activateWindow()
             return
-        if not verify_password(dialog.input.text().strip(), self.cfg.password_hash, self.cfg.password_salt):
-            QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호가 일치하지 않습니다.")
+        self._password_dialog = PasswordDialog(self._verify_password, self)
+        self._password_dialog.finished.connect(self._clear_password_dialog)
+        if self._password_dialog.exec() != QtWidgets.QDialog.Accepted:
             return
         self.showNormal()
         self.resize(self.minimumSize())
         self.raise_()
         self.activateWindow()
+
+    def _verify_password(self, value: str) -> bool:
+        return verify_password(value, self.cfg.password_hash, self.cfg.password_salt)
+
+    def _clear_password_dialog(self):
+        self._password_dialog = None
 
     def _quit_app(self):
         self.process_manager.stop_all()
