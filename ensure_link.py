@@ -2,6 +2,7 @@ import argparse
 import ctypes
 from ctypes import wintypes
 from dataclasses import dataclass, asdict
+import hashlib
 import json
 import os
 import subprocess
@@ -108,7 +109,9 @@ class AppConfig:
     target_refocus_interval_sec: float = 3.0
     saver_start_delay_sec: float = 1.0
     notice_enabled: bool = True
-    admin_password: str = "0000"
+    admin_password: str = ""
+    password_hash: str = ""
+    password_salt: str = ""
     accent_theme: str = "sky"
 
     @classmethod
@@ -153,9 +156,26 @@ class AppConfig:
             ),
             saver_start_delay_sec=float(data.get("saver_start_delay_sec", 1.0)),
             notice_enabled=bool(data.get("notice_enabled", True)),
-            admin_password=str(data.get("admin_password", "0000")),
+            admin_password=str(data.get("admin_password", "")),
+            password_hash=str(data.get("password_hash", "")),
+            password_salt=str(data.get("password_salt", "")),
             accent_theme=str(data.get("accent_theme", "sky")),
         )
+
+
+def hash_password(password: str, salt: str) -> str:
+    return hashlib.sha256(f"{salt}{password}".encode("utf-8")).hexdigest()
+
+
+def create_password_hash(password: str) -> tuple[str, str]:
+    salt = os.urandom(16).hex()
+    return hash_password(password, salt), salt
+
+
+def verify_password(password: str, password_hash: str, salt: str) -> bool:
+    if not password_hash or not salt:
+        return False
+    return hash_password(password, salt) == password_hash
 
 
 def load_config() -> AppConfig:
@@ -167,7 +187,13 @@ def load_config() -> AppConfig:
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as file:
             data = json.load(file)
-        return AppConfig.from_dict(data)
+        cfg = AppConfig.from_dict(data)
+        if not cfg.password_hash:
+            raw_password = data.get("admin_password", "") or "0000"
+            cfg.password_hash, cfg.password_salt = create_password_hash(raw_password)
+            cfg.admin_password = ""
+            save_config(cfg)
+        return cfg
     except Exception as exc:
         log(f"CONFIG load error: {exc}")
         return AppConfig()
@@ -983,8 +1009,9 @@ class MainWindow(QtWidgets.QMainWindow):
             log(f"OPEN work dir error: {exc}")
 
     def _ensure_default_password(self):
-        if not self.cfg.admin_password:
-            self.cfg.admin_password = "0000"
+        if not self.cfg.password_hash:
+            self.cfg.password_hash, self.cfg.password_salt = create_password_hash("0000")
+            self.cfg.admin_password = ""
             save_config(self.cfg)
 
     def _change_password(self):
@@ -997,7 +1024,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not current:
             QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "현재 비밀번호를 입력하세요.")
             return
-        if current != self.cfg.admin_password:
+        if not verify_password(current, self.cfg.password_hash, self.cfg.password_salt):
             QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "현재 비밀번호가 올바르지 않습니다.")
             return
         if not new_password:
@@ -1009,7 +1036,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if new_password != confirm:
             QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호 확인이 일치하지 않습니다.")
             return
-        self.cfg.admin_password = new_password
+        self.cfg.password_hash, self.cfg.password_salt = create_password_hash(new_password)
+        self.cfg.admin_password = ""
         save_config(self.cfg)
 
     def _build_tray_icon(self) -> QtGui.QIcon:
@@ -1066,7 +1094,7 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = PasswordDialog(self)
         if dialog.exec() != QtWidgets.QDialog.Accepted:
             return
-        if dialog.input.text().strip() != self.cfg.admin_password:
+        if not verify_password(dialog.input.text().strip(), self.cfg.password_hash, self.cfg.password_salt):
             QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호가 일치하지 않습니다.")
             return
         self.showNormal()
@@ -1143,7 +1171,9 @@ class MainWindow(QtWidgets.QMainWindow):
             target_refocus_interval_sec=self.target_refocus_interval.value(),
             saver_start_delay_sec=self.saver_start_delay.value(),
             notice_enabled=self.notice_enabled.isChecked(),
-            admin_password=self.cfg.admin_password,
+            admin_password="",
+            password_hash=self.cfg.password_hash,
+            password_salt=self.cfg.password_salt,
             accent_theme=self.accent_theme.currentText(),
         )
         return cfg
