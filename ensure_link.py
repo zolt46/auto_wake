@@ -462,6 +462,7 @@ class PasswordDialog(QtWidgets.QDialog):
         ok = QtWidgets.QPushButton("확인")
         cancel.clicked.connect(self.reject)
         ok.clicked.connect(self._accept_with_validation)
+        self.input.returnPressed.connect(self._accept_with_validation)
         buttons.addStretch()
         buttons.addWidget(cancel)
         buttons.addWidget(ok)
@@ -679,6 +680,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_settings: Optional[QtGui.QAction] = None
         self.action_quit: Optional[QtGui.QAction] = None
         self._password_dialog: Optional[PasswordDialog] = None
+        self._opening_settings = False
         self._build_ui()
         self._apply_palette()
         self._loading = False
@@ -1095,6 +1097,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_stop.setEnabled(self.is_running)
 
     def _request_settings_open(self):
+        if self._opening_settings:
+            return
         if self.isVisible():
             self.raise_()
             self.activateWindow()
@@ -1103,20 +1107,24 @@ class MainWindow(QtWidgets.QMainWindow):
             self._password_dialog.raise_()
             self._password_dialog.activateWindow()
             return
+        self._opening_settings = True
         self._password_dialog = PasswordDialog(self._verify_password, self)
         self._password_dialog.finished.connect(self._clear_password_dialog)
         if self._password_dialog.exec() != QtWidgets.QDialog.Accepted:
+            self._opening_settings = False
             return
         self.showNormal()
         self.resize(self.minimumSize())
         self.raise_()
         self.activateWindow()
+        self._opening_settings = False
 
     def _verify_password(self, value: str) -> bool:
         return verify_password(value, self.cfg.password_hash, self.cfg.password_salt)
 
     def _clear_password_dialog(self):
         self._password_dialog = None
+        self._opening_settings = False
 
     def _quit_app(self):
         self.process_manager.stop_all()
@@ -1456,6 +1464,7 @@ def run_ui():
 
 
 def main():
+    ensure_streams()
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["ui", "audio", "target", "saver"], default="ui")
     args = parser.parse_args()
