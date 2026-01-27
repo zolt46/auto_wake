@@ -1,10 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
+import sys
 
 block_cipher = None
 
-project_root = os.path.abspath(os.path.dirname(__file__))
+spec_path = globals().get("specpath") or os.getcwd()
+project_root = os.path.abspath(spec_path)
 entry_script = os.path.join(project_root, "ensure_link.py")
 
 
