@@ -931,10 +931,13 @@ class ProcessManager:
     def start(self, mode: str):
         if mode in self.processes and self.processes[mode].poll() is None:
             return
-        args = [sys.executable, os.path.abspath(__file__), "--mode", mode]
+        if getattr(sys, "frozen", False):
+            args = [sys.executable, "--mode", mode]
+        else:
+            args = [sys.executable, os.path.abspath(__file__), "--mode", mode]
         proc = subprocess.Popen(args)
         self.processes[mode] = proc
-        log(f"Spawned worker: {mode}")
+        log(f"Spawned worker: {mode} ({' '.join(args)})")
 
     def stop(self, mode: str):
         proc = self.processes.get(mode)
