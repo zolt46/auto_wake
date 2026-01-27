@@ -1603,6 +1603,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._password_dialog = None
         if self.isVisible() or self.isMinimized():
             self._bring_window_to_front()
+            return
         self._opening_settings = True
         self._password_dialog = PasswordDialog(self._verify_password, self.palette, self)
         self._password_dialog.finished.connect(self._handle_password_finished)
