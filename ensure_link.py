@@ -964,8 +964,7 @@ class MainWindow(QtWidgets.QMainWindow):
             #TopBar {{
                 background: {palette['topbar']};
                 border-radius: 14px;
-                border: 1px solid {palette['border']};
-                border-bottom: none;
+                border: none;
             }}
             #TopTitle {{ font-size: 20px; font-weight: 700; }}
             #StatePill {{
@@ -1603,17 +1602,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self._opening_settings = False
         if self._opening_settings:
             return
+        if self._password_dialog:
+            self._password_dialog.close()
+            self._password_dialog = None
         if self.isVisible() or self.isMinimized():
             self._bring_window_to_front()
-            if self._password_dialog:
-                self._bring_dialog_to_front(self._password_dialog)
-            return
-        if self._password_dialog:
-            self._bring_dialog_to_front(self._password_dialog)
-            return
         self._opening_settings = True
         self._password_dialog = PasswordDialog(self._verify_password, self.palette, self)
         self._password_dialog.finished.connect(self._clear_password_dialog)
+        self._bring_dialog_to_front(self._password_dialog)
         if self._password_dialog.exec() != QtWidgets.QDialog.Accepted:
             self._opening_settings = False
             return
