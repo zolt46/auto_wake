@@ -272,18 +272,17 @@ def build_palette(accent_theme: str) -> dict:
     bg, card, card_alt, topbar, tab_bg = background_variants.get(
         accent_theme, background_variants["sky"]
     )
-    bg = _blend_with_white(bg, 0.05)
-    card = _blend_with_white(card, 0.03)
-    card_alt = _blend_with_white(card_alt, 0.03)
-    topbar = _blend_with_white(topbar, 0.04)
-    tab_bg = _blend_with_white(tab_bg, 0.03)
+    bg = _blend_with_white(bg, 0.03)
+    card = _blend_with_white(card, 0.02)
+    card_alt = _blend_with_white(card_alt, 0.02)
+    tab_bg = _blend_with_white(tab_bg, 0.02)
 
-    bg = _blend_with_black(bg, 0.04)
-    card = _blend_with_black(card, 0.04)
-    card_alt = _blend_with_black(card_alt, 0.04)
-    topbar = _blend_with_black(topbar, 0.04)
-    tab_bg = _blend_with_black(tab_bg, 0.04)
+    bg = _blend_with_black(bg, 0.08)
+    card = _blend_with_black(card, 0.06)
+    card_alt = _blend_with_black(card_alt, 0.06)
+    tab_bg = _blend_with_black(tab_bg, 0.1)
     accent_dark = _blend_with_black(accent, 0.28)
+    tab_active = _blend_with_black(tab_bg, 0.12)
     return {
         "bg": bg,
         "bg_card": card,
@@ -296,7 +295,7 @@ def build_palette(accent_theme: str) -> dict:
         "border": "#cbd5f5",
         "bg_dark": "#0f172a",
         "tab_bg": tab_bg,
-        "tab_active": card,
+        "tab_active": tab_active,
         "tab_text": "#334155",
         "topbar": topbar,
         "dialog_bg": card_alt,
@@ -528,14 +527,14 @@ class PasswordDialog(QtWidgets.QDialog):
     def _accept_with_validation(self):
         value = self.input.text().strip()
         if not value:
-            self.message.setText("비밀번호를 입력하세요.")
+            self.message.setText("\n비밀번호를 입력하세요.")
             QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호를 입력하세요.")
             self.show()
             self.raise_()
             self.activateWindow()
             return
         if not self._verifier(value):
-            self.message.setText("비밀번호가 올바르지 않습니다. 다시 입력해 주세요.")
+            self.message.setText("\n비밀번호가 올바르지 않습니다. 다시 입력해 주세요.")
             QtWidgets.QMessageBox.warning(
                 self,
                 "비밀번호 오류",
@@ -832,7 +831,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: #0b1220;
             }}
             QPushButton#StartButton:disabled {{
-                background: {palette['accent_dark']};
+                background: {palette['bg_dark']};
                 color: #0b1220;
             }}
             QPushButton#StopButton {{
@@ -840,7 +839,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: #fff7ed;
             }}
             QPushButton#StopButton:disabled {{
-                background: {palette['accent_dark']};
+                background: {palette['bg_dark']};
                 color: #0b1220;
             }}
             #NoticeFrame {{
@@ -894,16 +893,17 @@ class MainWindow(QtWidgets.QMainWindow):
             }}
             QTabWidget::tab-bar {{
                 top: 14px;
-                left: 48px;
+                left: 32px;
             }}
             QTabBar::tab {{
                 background: {palette['tab_bg']};
-                color: {palette['tab_text']};
+                color: {palette['text_primary']};
                 padding: 6px 14px;
                 margin-right: 6px;
                 border-top-left-radius: 10px;
                 border-top-right-radius: 10px;
-                font-weight: 700;
+                font-size: 15px;
+                font-weight: 800;
             }}
             QTabBar::tab:selected {{
                 background: {palette['tab_active']};
@@ -1266,6 +1266,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_start.setEnabled(not self.is_running)
         self.action_stop.setEnabled(self.is_running)
 
+    def _bring_dialog_to_front(self, dialog: QtWidgets.QDialog) -> None:
+        dialog.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+        dialog.setWindowState(
+            dialog.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive
+        )
+
+        def _restore_flag():
+            dialog.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, False)
+            dialog.show()
+
+        QtCore.QTimer.singleShot(200, _restore_flag)
+
     def _request_settings_open(self):
         if self._opening_settings and not (
             self._password_dialog and self._password_dialog.isVisible()
@@ -1278,13 +1293,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.activateWindow()
             return
         if self._password_dialog:
-            self._password_dialog.show()
-            self._password_dialog.raise_()
-            self._password_dialog.activateWindow()
-            self._password_dialog.setWindowState(
-                self._password_dialog.windowState() & ~QtCore.Qt.WindowMinimized
-                | QtCore.Qt.WindowActive
-            )
+            self._bring_dialog_to_front(self._password_dialog)
             return
         self._opening_settings = True
         self._password_dialog = PasswordDialog(self._verify_password, self.palette, self)
