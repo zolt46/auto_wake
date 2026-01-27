@@ -478,18 +478,21 @@ class StepperInput(QtWidgets.QWidget):
         super().__init__(parent)
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(2)
 
         self.minus_button = QtWidgets.QPushButton("◀")
         self.minus_button.setObjectName("StepperButton")
         self.plus_button = QtWidgets.QPushButton("▶")
         self.plus_button.setObjectName("StepperButton")
+        for button in (self.minus_button, self.plus_button):
+            button.setFixedSize(24, 24)
+            button.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
 
         self.spin = QtWidgets.QDoubleSpinBox()
         self.spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         self.spin.setAlignment(QtCore.Qt.AlignCenter)
         self.spin.valueChanged.connect(self.valueChanged.emit)
-        self.spin.setFixedWidth(90)
+        self.spin.setFixedWidth(70)
 
         self.minus_button.clicked.connect(lambda: self.spin.stepBy(-1))
         self.plus_button.clicked.connect(lambda: self.spin.stepBy(1))
@@ -582,6 +585,8 @@ class PasswordDialog(QtWidgets.QDialog):
         self.setFixedSize(320, 180)
         self._verifier = verifier
         self._palette = palette
+        self._warning_open = False
+        self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowStaysOnTopHint)
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel("설정에 들어가려면 비밀번호를 입력하세요."))
         self.input = QtWidgets.QLineEdit()
@@ -624,9 +629,14 @@ class PasswordDialog(QtWidgets.QDialog):
         )
 
     def _show_warning(self, message: str) -> None:
+        self._warning_open = True
         self.input.setEnabled(False)
         for button in self._action_buttons:
             button.setEnabled(False)
+        try:
+            self.input.returnPressed.disconnect(self._accept_with_validation)
+        except TypeError:
+            pass
         warning = QtWidgets.QMessageBox(self)
         warning.setIcon(QtWidgets.QMessageBox.Warning)
         warning.setWindowTitle("비밀번호 오류")
@@ -645,13 +655,25 @@ class PasswordDialog(QtWidgets.QDialog):
         warning.setFocus()
 
     def _restore_focus(self) -> None:
+        self._warning_open = False
         self.input.setEnabled(True)
         for button in self._action_buttons:
             button.setEnabled(True)
+        try:
+            self.input.returnPressed.disconnect(self._accept_with_validation)
+        except TypeError:
+            pass
+        self.input.returnPressed.connect(self._accept_with_validation)
         self.show()
         self.raise_()
         self.activateWindow()
         self.input.setFocus()
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if self._warning_open and event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+            event.ignore()
+            return
+        super().keyPressEvent(event)
 
     def _accept_with_validation(self):
         value = self.input.text().strip()
@@ -967,8 +989,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: {palette['text_primary']};
                 border: 1px solid {palette['border']};
                 border-radius: 10px;
-                min-width: 22px;
-                min-height: 22px;
+                min-width: 24px;
+                min-height: 24px;
                 font-size: 14px;
                 font-weight: 700;
             }}
@@ -1041,7 +1063,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 border: none;
                 border-radius: 12px;
                 background: {palette['bg']};
-                margin-top: 6px;
+                margin-top: 0px;
             }}
             QTabWidget::tab-bar {{
                 top: 14px;
@@ -1056,6 +1078,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: {palette['text_primary']};
                 padding: 5px 12px;
                 margin-right: 6px;
+                margin-bottom: 0px;
                 border-top-left-radius: 10px;
                 border-top-right-radius: 10px;
                 border: none;
