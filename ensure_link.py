@@ -1372,7 +1372,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.saver_browse_button = QtWidgets.QPushButton("찾기")
         self.saver_browse_button.clicked.connect(self._browse_image)
         self.saver_mode.currentTextChanged.connect(self._update_saver_path_controls)
-        image_row = QtWidgets.QHBoxLayout()
+        self.saver_path_row = QtWidgets.QWidget()
+        image_row = QtWidgets.QHBoxLayout(self.saver_path_row)
+        image_row.setContentsMargins(0, 0, 0, 0)
         image_row.addWidget(self.saver_image_path)
         image_row.addWidget(self.saver_browse_button)
 
@@ -1394,7 +1396,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.saver_start_delay.setDecimals(2)
 
         form.addRow(self._label("이미지 모드"), self.saver_mode)
-        form.addRow(self._label("이미지 경로"), image_row)
+        self.saver_path_label = self._label("이미지 경로")
+        form.addRow(self.saver_path_label, self.saver_path_row)
         form.addRow(self._label("표시 대기(초)"), self.saver_idle_delay)
         form.addRow(self._label("활동 감지 임계(초)"), self.saver_active_threshold)
         form.addRow(self._label("폴링 주기(초)"), self.saver_poll)
@@ -1406,8 +1409,9 @@ class MainWindow(QtWidgets.QMainWindow):
         selected_mode = mode or self.saver_mode.currentText()
         enabled = selected_mode == "path"
         self.saver_image_path.setEnabled(enabled)
-        if hasattr(self, "saver_browse_button"):
-            self.saver_browse_button.setEnabled(enabled)
+        self.saver_browse_button.setEnabled(enabled)
+        self.saver_path_row.setVisible(enabled)
+        self.saver_path_label.setVisible(enabled)
 
     def _build_settings_section(self, layout: QtWidgets.QVBoxLayout):
         self.notice_enabled = StyledToggle("안내 팝업 표시")
@@ -1798,10 +1802,26 @@ class AudioWorker:
         self.proc: Optional[subprocess.Popen] = None
         self.last_launch = 0.0
         self.pending_launch_at: Optional[float] = None
+        self.last_config_signature: Optional[tuple] = None
 
     def run(self):
         while True:
             self.cfg = load_config()
+            config_signature = (
+                self.cfg.audio_url,
+                self.cfg.audio_window_mode,
+                self.cfg.audio_start_delay_sec,
+                self.cfg.audio_relaunch_cooldown_sec,
+                self.cfg.audio_enabled,
+            )
+            if self.last_config_signature is None:
+                self.last_config_signature = config_signature
+            elif config_signature != self.last_config_signature:
+                self.last_config_signature = config_signature
+                if self.proc and self.proc.poll() is None:
+                    self._stop_proc()
+                    self.pending_launch_at = time.time() + self.cfg.audio_start_delay_sec
+                    self.last_launch = 0.0
             if not self.cfg.audio_enabled:
                 self._stop_proc()
                 self.pending_launch_at = None
@@ -1837,6 +1857,7 @@ class TargetWorker(QtCore.QObject):
         self.last_launch = 0.0
         self.last_refocus = 0.0
         self.pending_launch_at: Optional[float] = None
+        self.last_config_signature: Optional[tuple] = None
         self.palette_key = (self.cfg.accent_theme, self.cfg.accent_color)
         self.palette = build_palette(self.cfg.accent_theme, self.cfg.accent_color)
         self.notice = NoticeWindow(self.palette)
@@ -1846,6 +1867,21 @@ class TargetWorker(QtCore.QObject):
 
     def _tick(self):
         self.cfg = load_config()
+        config_signature = (
+            self.cfg.url,
+            self.cfg.target_window_mode,
+            self.cfg.target_start_delay_sec,
+            self.cfg.target_relaunch_cooldown_sec,
+            self.cfg.target_enabled,
+        )
+        if self.last_config_signature is None:
+            self.last_config_signature = config_signature
+        elif config_signature != self.last_config_signature:
+            self.last_config_signature = config_signature
+            if self.proc and self.proc.poll() is None:
+                self._stop_proc()
+                self.pending_launch_at = time.time() + self.cfg.target_start_delay_sec
+                self.last_launch = 0.0
         new_key = (self.cfg.accent_theme, self.cfg.accent_color)
         if new_key != self.palette_key:
             self.palette_key = new_key
