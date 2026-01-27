@@ -329,9 +329,26 @@ def build_palette(accent_theme: str, accent_color: str = "") -> dict:
 
 
 def find_chrome_exe() -> str:
-    for path in CHROME_CANDIDATES:
-        if os.path.exists(path):
+    env_candidates = [
+        os.path.join(os.environ.get("PROGRAMFILES", ""), "Google", "Chrome", "Application", "chrome.exe"),
+        os.path.join(
+            os.environ.get("PROGRAMFILES(X86)", ""), "Google", "Chrome", "Application", "chrome.exe"
+        ),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "Chrome", "Application", "chrome.exe"),
+        os.path.join(os.environ.get("PROGRAMFILES", ""), "Microsoft", "Edge", "Application", "msedge.exe"),
+        os.path.join(
+            os.environ.get("PROGRAMFILES(X86)", ""), "Microsoft", "Edge", "Application", "msedge.exe"
+        ),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "Application", "msedge.exe"),
+    ]
+    for path in [*CHROME_CANDIDATES, *env_candidates]:
+        if path and os.path.exists(path):
             return path
+    for candidate in ("chrome", "msedge"):
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    log("Chrome/Edge executable not found; falling back to 'chrome' in PATH.")
     return "chrome"
 
 
