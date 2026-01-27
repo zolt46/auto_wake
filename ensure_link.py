@@ -287,17 +287,17 @@ def build_palette(accent_theme: str, accent_color: str = "") -> dict:
     accent_color = _normalize_hex_color(accent_color)
     if accent_color:
         accent = accent_color
-        accent_soft = _blend_with_white(accent, 0.45)
-        bg = _blend_with_white(accent, 0.72)
-        card = _blend_with_white(accent, 0.8)
-        card_alt = _blend_with_white(accent, 0.86)
-        topbar = _blend_with_white(accent, 0.68)
-        tab_bg = _blend_with_white(accent, 0.76)
-        bg = _blend_with_black(bg, 0.12)
-        card = _blend_with_black(card, 0.1)
+        accent_soft = _blend_with_white(accent, 0.35)
+        bg = _blend_with_white(accent, 0.82)
+        card = _blend_with_white(accent, 0.88)
+        card_alt = _blend_with_white(accent, 0.93)
+        topbar = _blend_with_white(accent, 0.74)
+        tab_bg = _blend_with_white(accent, 0.84)
+        bg = _blend_with_black(bg, 0.18)
+        card = _blend_with_black(card, 0.12)
         card_alt = _blend_with_black(card_alt, 0.06)
-        topbar = _blend_with_black(topbar, 0.14)
-        tab_bg = _blend_with_black(tab_bg, 0.12)
+        topbar = _blend_with_black(topbar, 0.2)
+        tab_bg = _blend_with_black(tab_bg, 0.16)
     else:
         bg = _blend_with_white(bg, 0.03)
         card = _blend_with_white(card, 0.02)
@@ -308,8 +308,9 @@ def build_palette(accent_theme: str, accent_color: str = "") -> dict:
         card = _blend_with_black(card, 0.06)
         card_alt = _blend_with_black(card_alt, 0.06)
         tab_bg = _blend_with_black(tab_bg, 0.1)
-    accent_dark = _blend_with_black(accent, 0.28)
-    tab_active = _blend_with_black(tab_bg, 0.12)
+    accent_dark = _blend_with_black(accent, 0.32)
+    tab_active = _blend_with_black(tab_bg, 0.2)
+    border = _blend_with_black(tab_bg, 0.2)
     return {
         "bg": bg,
         "bg_card": card,
@@ -319,7 +320,7 @@ def build_palette(accent_theme: str, accent_color: str = "") -> dict:
         "accent_dark": accent_dark,
         "text_primary": "#0f172a",
         "text_muted": "#475569",
-        "border": "#cbd5f5",
+        "border": border,
         "bg_dark": "#0f172a",
         "tab_bg": tab_bg,
         "tab_active": tab_active,
@@ -1005,7 +1006,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 font-weight: 700;
                 font-size: 14px;
             }}
+            QPushButton:focus {{ outline: none; }}
             QPushButton:hover {{ background: {palette['accent_soft']}; }}
+            QPushButton:pressed {{
+                background: {palette['accent_dark']};
+                color: #f8fafc;
+            }}
             QPushButton:disabled {{
                 background: {palette['accent_dark']};
                 color: #0b1220;
@@ -1014,6 +1020,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 background: {palette['accent']};
                 color: #0b1220;
             }}
+            QPushButton#ModeButton:focus {{ outline: none; }}
             QPushButton#ModeButton {{
                 background: {palette['bg_card_alt']};
                 color: {palette['text_primary']};
@@ -1027,6 +1034,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 background: {palette['accent']};
                 color: #0b1220;
             }}
+            QPushButton#ModeButton:hover {{
+                background: {palette['accent_soft']};
+                color: #0b1220;
+            }}
+            QPushButton#ModeButton:pressed {{
+                background: {palette['accent_dark']};
+                color: #f8fafc;
+            }}
             QPushButton#StepperButton {{
                 background: {palette['bg_card_alt']};
                 color: {palette['text_primary']};
@@ -1038,12 +1053,25 @@ class MainWindow(QtWidgets.QMainWindow):
                 font-size: 14px;
                 font-weight: 700;
             }}
+            QPushButton#StepperButton:hover {{
+                background: {palette['accent_soft']};
+                color: #0b1220;
+            }}
+            QPushButton#StepperButton:pressed {{
+                background: {palette['accent_dark']};
+                color: #f8fafc;
+            }}
             QPushButton#ThemeColorButton {{
                 background: {palette['accent']};
                 color: #0b1220;
                 border-radius: 10px;
                 padding: 6px 12px;
                 font-weight: 700;
+            }}
+            QPushButton#ThemeColorButton:hover {{ background: {palette['accent_soft']}; }}
+            QPushButton#ThemeColorButton:pressed {{
+                background: {palette['accent_dark']};
+                color: #f8fafc;
             }}
             QPushButton#StartButton {{
                 background: {palette['accent']};
@@ -1106,11 +1134,11 @@ class MainWindow(QtWidgets.QMainWindow):
             QTabWidget::pane {{
                 border: none;
                 border-radius: 12px;
-                background: {palette['bg']};
-                margin-top: 0px;
+                background: {palette['bg_card']};
+                margin-top: 8px;
             }}
             QTabWidget::tab-bar {{
-                top: 14px;
+                top: 6px;
                 left: 32px;
             }}
             QTabWidget::tab-bar, QTabBar::tab-bar {{
@@ -1134,7 +1162,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QTabBar::tab {{
                 background: {palette['tab_bg']};
                 color: {palette['text_primary']};
-                padding: 5px 12px;
+                padding: 6px 12px;
                 margin-right: 6px;
                 margin-bottom: 0px;
                 border-top-left-radius: 10px;
@@ -1143,6 +1171,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 font-size: 13px;
                 font-weight: 600;
             }}
+            QTabBar::tab:focus {{ outline: none; }}
+            QTabBar::tab:hover {{ background: {palette['accent_soft']}; color: #0b1220; }}
             QTabBar::tab:selected {{
                 background: {palette['tab_active']};
                 color: {palette['text_primary']};
@@ -1556,12 +1586,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def _bring_dialog_to_front(self, dialog: QtWidgets.QDialog) -> None:
         original_flags = dialog.windowFlags()
         dialog.setWindowFlags(original_flags | QtCore.Qt.WindowStaysOnTopHint)
-        dialog.show()
-        dialog.raise_()
-        dialog.activateWindow()
         dialog.setWindowState(
             dialog.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive
         )
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+        dialog.setFocus()
 
         def _restore_flag():
             dialog.setWindowFlags(original_flags)
@@ -1578,9 +1609,10 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         if self._password_dialog:
             self._bring_dialog_to_front(self._password_dialog)
-            return
         if self.isVisible() or self.isMinimized():
             self._bring_window_to_front()
+            if self._password_dialog:
+                self._bring_dialog_to_front(self._password_dialog)
             return
         self._opening_settings = True
         self._password_dialog = PasswordDialog(self._verify_password, self.palette, self)
