@@ -232,6 +232,17 @@ def _blend_with_white(hex_color: str, ratio: float) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
+def _blend_with_black(hex_color: str, ratio: float) -> str:
+    hex_color = hex_color.lstrip("#")
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    r = int(r * (1 - ratio))
+    g = int(g * (1 - ratio))
+    b = int(b * (1 - ratio))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 def build_palette(accent_theme: str) -> dict:
     accents = {
         "sky": ("#0ea5e9", "#38bdf8"),
@@ -261,17 +272,25 @@ def build_palette(accent_theme: str) -> dict:
     bg, card, card_alt, topbar, tab_bg = background_variants.get(
         accent_theme, background_variants["sky"]
     )
-    bg = _blend_with_white(bg, 0.08)
-    card = _blend_with_white(card, 0.04)
-    card_alt = _blend_with_white(card_alt, 0.04)
-    topbar = _blend_with_white(topbar, 0.06)
-    tab_bg = _blend_with_white(tab_bg, 0.04)
+    bg = _blend_with_white(bg, 0.05)
+    card = _blend_with_white(card, 0.03)
+    card_alt = _blend_with_white(card_alt, 0.03)
+    topbar = _blend_with_white(topbar, 0.04)
+    tab_bg = _blend_with_white(tab_bg, 0.03)
+
+    bg = _blend_with_black(bg, 0.04)
+    card = _blend_with_black(card, 0.04)
+    card_alt = _blend_with_black(card_alt, 0.04)
+    topbar = _blend_with_black(topbar, 0.04)
+    tab_bg = _blend_with_black(tab_bg, 0.04)
+    accent_dark = _blend_with_black(accent, 0.28)
     return {
         "bg": bg,
         "bg_card": card,
         "bg_card_alt": card_alt,
         "accent": accent,
         "accent_soft": accent_soft,
+        "accent_dark": accent_dark,
         "text_primary": "#0f172a",
         "text_muted": "#475569",
         "border": "#cbd5f5",
@@ -397,6 +416,7 @@ class StyledToggle(QtWidgets.QAbstractButton):
         self._palette = {
             "accent": palette["accent"],
             "bg_card_alt": palette["bg_card_alt"],
+            "accent_dark": palette["accent_dark"],
             "text_primary": palette["text_primary"],
             "text_muted": palette["text_muted"],
             "knob": palette["bg"],
@@ -426,7 +446,7 @@ class StyledToggle(QtWidgets.QAbstractButton):
             track_color = QtGui.QColor(self._palette["accent"])
             knob_x = x + toggle_width - toggle_height + 2
         else:
-            track_color = QtGui.QColor(self._palette["bg_card_alt"])
+            track_color = QtGui.QColor(self._palette["accent_dark"])
             knob_x = x + 2
 
         painter.setPen(QtCore.Qt.NoPen)
@@ -463,6 +483,7 @@ class PasswordDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("보안 확인")
         self.setModal(True)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
         self.setFixedSize(320, 180)
         self._verifier = verifier
         self._palette = palette
@@ -509,6 +530,9 @@ class PasswordDialog(QtWidgets.QDialog):
         if not value:
             self.message.setText("비밀번호를 입력하세요.")
             QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호를 입력하세요.")
+            self.show()
+            self.raise_()
+            self.activateWindow()
             return
         if not self._verifier(value):
             self.message.setText("비밀번호가 올바르지 않습니다. 다시 입력해 주세요.")
@@ -520,6 +544,9 @@ class PasswordDialog(QtWidgets.QDialog):
             self.input.clear()
             self.input.selectAll()
             self.input.setFocus()
+            self.show()
+            self.raise_()
+            self.activateWindow()
             return
         self.accept()
 
@@ -751,7 +778,12 @@ class MainWindow(QtWidgets.QMainWindow):
         stylesheet = f"""
             QMainWindow {{ background: {palette['bg']}; }}
             QLabel {{ color: {palette['text_primary']}; font-family: 'Pretendard', 'Segoe UI', 'Noto Sans KR', sans-serif; font-size: 14px; font-weight: 600; }}
-            #TopBar {{ background: {palette['topbar']}; border-radius: 14px; border: 1px solid {palette['border']}; }}
+            #TopBar {{
+                background: {palette['topbar']};
+                border-radius: 14px;
+                border: 1px solid {palette['border']};
+                border-bottom: none;
+            }}
             #TopTitle {{ font-size: 22px; font-weight: 700; }}
             #StatePill {{
                 background: {palette['bg_card_alt']};
@@ -788,7 +820,7 @@ class MainWindow(QtWidgets.QMainWindow):
             }}
             QPushButton:hover {{ background: {palette['accent_soft']}; }}
             QPushButton:disabled {{
-                background: {palette['accent_soft']};
+                background: {palette['accent_dark']};
                 color: #0b1220;
             }}
             QPushButton#GhostButton {{
@@ -800,7 +832,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: #0b1220;
             }}
             QPushButton#StartButton:disabled {{
-                background: {palette['accent_soft']};
+                background: {palette['accent_dark']};
                 color: #0b1220;
             }}
             QPushButton#StopButton {{
@@ -808,7 +840,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: #fff7ed;
             }}
             QPushButton#StopButton:disabled {{
-                background: {palette['accent_soft']};
+                background: {palette['accent_dark']};
                 color: #0b1220;
             }}
             #NoticeFrame {{
@@ -862,6 +894,7 @@ class MainWindow(QtWidgets.QMainWindow):
             }}
             QTabWidget::tab-bar {{
                 top: 14px;
+                left: 48px;
             }}
             QTabBar::tab {{
                 background: {palette['tab_bg']};
@@ -1248,6 +1281,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self._password_dialog.show()
             self._password_dialog.raise_()
             self._password_dialog.activateWindow()
+            self._password_dialog.setWindowState(
+                self._password_dialog.windowState() & ~QtCore.Qt.WindowMinimized
+                | QtCore.Qt.WindowActive
+            )
             return
         self._opening_settings = True
         self._password_dialog = PasswordDialog(self._verify_password, self.palette, self)
