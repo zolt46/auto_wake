@@ -576,6 +576,41 @@ class FancyCard(QtWidgets.QFrame):
         layout.addLayout(self.body_layout)
 
 
+class WarningDialog(QtWidgets.QDialog):
+    def __init__(self, message: str, palette: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("비밀번호 오류")
+        self.setModal(True)
+        self.setFixedSize(300, 140)
+        layout = QtWidgets.QVBoxLayout(self)
+        label = QtWidgets.QLabel(message)
+        label.setWordWrap(True)
+        layout.addWidget(label)
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addStretch()
+        ok = QtWidgets.QPushButton("확인")
+        ok.setAutoDefault(False)
+        ok.clicked.connect(self.accept)
+        button_row.addWidget(ok)
+        layout.addLayout(button_row)
+        self.setStyleSheet(
+            " ".join(
+                [
+                    f"QDialog {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}",
+                    f"QDialog QLabel {{ color: {palette['dialog_text']}; }}",
+                    f"QDialog QPushButton {{ background: {palette['accent']}; color: #0b1220;",
+                    " border-radius: 10px; padding: 6px 12px; font-weight: 700; }}",
+                ]
+            )
+        )
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+            self.accept()
+            return
+        super().keyPressEvent(event)
+
+
 class PasswordDialog(QtWidgets.QDialog):
     def __init__(self, verifier, palette: dict, parent=None):
         super().__init__(parent)
@@ -586,6 +621,7 @@ class PasswordDialog(QtWidgets.QDialog):
         self._verifier = verifier
         self._palette = palette
         self._warning_open = False
+        self._warning_dialog: Optional[WarningDialog] = None
         self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowStaysOnTopHint)
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel("설정에 들어가려면 비밀번호를 입력하세요."))
@@ -637,22 +673,9 @@ class PasswordDialog(QtWidgets.QDialog):
             self.input.returnPressed.disconnect(self._accept_with_validation)
         except TypeError:
             pass
-        warning = QtWidgets.QMessageBox(self)
-        warning.setIcon(QtWidgets.QMessageBox.Warning)
-        warning.setWindowTitle("비밀번호 오류")
-        warning.setText(message)
-        warning.setStandardButtons(QtWidgets.QMessageBox.Ok)
-        ok_button = warning.button(QtWidgets.QMessageBox.Ok)
-        if ok_button:
-            ok_button.setAutoDefault(False)
-            ok_button.setDefault(False)
-        warning.setWindowModality(QtCore.Qt.WindowModal)
-        warning.setAttribute(QtCore.Qt.WA_DeleteOnClose)
-        warning.finished.connect(self._restore_focus)
-        warning.show()
-        warning.raise_()
-        warning.activateWindow()
-        warning.setFocus()
+        self._warning_dialog = WarningDialog(message, self._palette, self)
+        self._warning_dialog.finished.connect(self._restore_focus)
+        self._warning_dialog.open()
 
     def _restore_focus(self) -> None:
         self._warning_open = False
@@ -668,6 +691,7 @@ class PasswordDialog(QtWidgets.QDialog):
         self.raise_()
         self.activateWindow()
         self.input.setFocus()
+        self._warning_dialog = None
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
         if self._warning_open and event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
@@ -991,6 +1015,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 border-radius: 10px;
                 min-width: 24px;
                 min-height: 24px;
+                padding: 0px;
                 font-size: 14px;
                 font-weight: 700;
             }}
@@ -1070,6 +1095,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 left: 32px;
             }}
             QTabWidget::tab-bar, QTabBar::tab-bar {{
+                border: none;
+                background: transparent;
+            }}
+            QTabBar::base {{
                 border: none;
                 background: transparent;
             }}
@@ -1493,7 +1522,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.activateWindow()
 
     def _bring_dialog_to_front(self, dialog: QtWidgets.QDialog) -> None:
-        dialog.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+        original_flags = dialog.windowFlags()
+        dialog.setWindowFlags(original_flags | QtCore.Qt.WindowStaysOnTopHint)
         dialog.show()
         dialog.raise_()
         dialog.activateWindow()
@@ -1502,7 +1532,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
         def _restore_flag():
-            dialog.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, False)
+            dialog.setWindowFlags(original_flags)
             dialog.show()
 
         QtCore.QTimer.singleShot(200, _restore_flag)
