@@ -529,7 +529,7 @@ class StepperInput(QtWidgets.QWidget):
 class ModeSelector(QtWidgets.QWidget):
     currentTextChanged = QtCore.Signal(str)
 
-    def __init__(self, options: list[str], parent=None):
+    def __init__(self, options: list[str], parent=None, labels: Optional[dict[str, str]] = None):
         super().__init__(parent)
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -537,8 +537,9 @@ class ModeSelector(QtWidgets.QWidget):
         self._group = QtWidgets.QButtonGroup(self)
         self._group.setExclusive(True)
         self._buttons: dict[str, QtWidgets.QPushButton] = {}
+        self._labels = labels or {}
         for option in options:
-            button = QtWidgets.QPushButton(option)
+            button = QtWidgets.QPushButton(self._labels.get(option, option))
             button.setCheckable(True)
             button.setObjectName("ModeButton")
             self._group.addButton(button)
@@ -1243,8 +1244,8 @@ class MainWindow(QtWidgets.QMainWindow):
         tabs.setElideMode(QtCore.Qt.ElideRight)
 
         self.audio_card = FancyCard(
-            "음원 창",
-            "YouTube 포함 음원 창을 별도 프로세스로 실행하고 자동 재생합니다.",
+            "음원",
+            "YouTube 포함 음원을 별도 프로세스로 실행하고 자동 재생합니다.",
         )
         self._build_audio_section(self.audio_card.body_layout)
         audio_tab = QtWidgets.QWidget()
@@ -1253,8 +1254,8 @@ class MainWindow(QtWidgets.QMainWindow):
         audio_layout.addStretch()
 
         self.target_card = FancyCard(
-            "특정 URL 창",
-            "키오스크/전체화면/일반 모드를 선택할 수 있는 대상 창입니다.",
+            "URL",
+            "키오스크/전체화면/일반/최소화 모드를 선택할 수 있는 URL 창입니다.",
         )
         self._build_target_section(self.target_card.body_layout)
         target_tab = QtWidgets.QWidget()
@@ -1282,8 +1283,8 @@ class MainWindow(QtWidgets.QMainWindow):
         settings_layout.addWidget(self.general_card)
         settings_layout.addStretch()
 
-        tabs.addTab(audio_tab, "음원 창 옵션")
-        tabs.addTab(target_tab, "URL 창 옵션")
+        tabs.addTab(audio_tab, "음원 옵션")
+        tabs.addTab(target_tab, "URL 옵션")
         tabs.addTab(saver_tab, "스크린 세이버 옵션")
         tabs.addTab(settings_tab, "프로그램 설정")
 
@@ -1291,13 +1292,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(central)
 
     def _build_audio_section(self, layout: QtWidgets.QVBoxLayout):
-        self.audio_enabled = StyledToggle("음원 창 사용")
+        self.audio_enabled = StyledToggle("음원 사용")
         self._register_toggle(self.audio_enabled)
         layout.addWidget(self.audio_enabled)
 
         form = QtWidgets.QFormLayout()
         self.audio_url = QtWidgets.QLineEdit()
-        self.audio_mode = ModeSelector(["minimized", "normal", "fullscreen", "kiosk"])
+        self.audio_mode = ModeSelector(
+            ["minimized", "normal", "fullscreen", "kiosk"],
+            labels={"minimized": "최소화", "normal": "일반 창", "fullscreen": "전체화면", "kiosk": "키오스크"},
+        )
         self.audio_start_delay = StepperInput()
         self.audio_start_delay.setRange(0.0, 60.0)
         self.audio_start_delay.setSingleStep(0.5)
@@ -1307,7 +1311,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audio_relaunch_cooldown.setSingleStep(1.0)
         self.audio_relaunch_cooldown.setDecimals(2)
         form.addRow(self._label("음원 URL"), self.audio_url)
-        form.addRow(self._label("창 모드"), self.audio_mode)
+        form.addRow(self._label("시작 창 모드"), self.audio_mode)
         form.addRow(self._label("시작 지연(초)"), self.audio_start_delay)
         form.addRow(self._label("재실행 쿨다운(초)"), self.audio_relaunch_cooldown)
         layout.addLayout(form)
@@ -1325,13 +1329,16 @@ class MainWindow(QtWidgets.QMainWindow):
         toggle.set_palette(self.palette)
 
     def _build_target_section(self, layout: QtWidgets.QVBoxLayout):
-        self.target_enabled = StyledToggle("특정 URL 창 사용")
+        self.target_enabled = StyledToggle("URL 사용")
         self._register_toggle(self.target_enabled)
         layout.addWidget(self.target_enabled)
 
         form = QtWidgets.QFormLayout()
         self.target_url = QtWidgets.QLineEdit()
-        self.target_mode = ModeSelector(["normal", "fullscreen", "kiosk", "minimized"])
+        self.target_mode = ModeSelector(
+            ["normal", "fullscreen", "kiosk", "minimized"],
+            labels={"minimized": "최소화", "normal": "일반 창", "fullscreen": "전체화면", "kiosk": "키오스크"},
+        )
         self.target_start_delay = StepperInput()
         self.target_start_delay.setRange(0.0, 60.0)
         self.target_start_delay.setSingleStep(0.5)
@@ -1344,8 +1351,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.target_refocus_interval.setRange(1.0, 60.0)
         self.target_refocus_interval.setSingleStep(1.0)
         self.target_refocus_interval.setDecimals(2)
-        form.addRow(self._label("대상 URL"), self.target_url)
-        form.addRow(self._label("창 모드"), self.target_mode)
+        form.addRow(self._label("URL"), self.target_url)
+        form.addRow(self._label("시작 창 모드"), self.target_mode)
         form.addRow(self._label("시작 지연(초)"), self.target_start_delay)
         form.addRow(self._label("재실행 쿨다운(초)"), self.target_relaunch_cooldown)
         form.addRow(self._label("재포커스 간격(초)"), self.target_refocus_interval)
@@ -1357,13 +1364,17 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.saver_enabled)
 
         form = QtWidgets.QFormLayout()
-        self.saver_mode = ModeSelector(["bundled", "path", "generated"])
+        self.saver_mode = ModeSelector(
+            ["bundled", "path", "generated"],
+            labels={"bundled": "기본 이미지", "path": "사용자 지정", "generated": "로드 실패 자동 생성"},
+        )
         self.saver_image_path = QtWidgets.QLineEdit()
-        browse = QtWidgets.QPushButton("찾기")
-        browse.clicked.connect(self._browse_image)
+        self.saver_browse_button = QtWidgets.QPushButton("찾기")
+        self.saver_browse_button.clicked.connect(self._browse_image)
+        self.saver_mode.currentTextChanged.connect(self._update_saver_path_controls)
         image_row = QtWidgets.QHBoxLayout()
         image_row.addWidget(self.saver_image_path)
-        image_row.addWidget(browse)
+        image_row.addWidget(self.saver_browse_button)
 
         self.saver_idle_delay = StepperInput()
         self.saver_idle_delay.setRange(1.0, 3600.0)
@@ -1389,14 +1400,22 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow(self._label("폴링 주기(초)"), self.saver_poll)
         form.addRow(self._label("시작 지연(초)"), self.saver_start_delay)
         layout.addLayout(form)
+        self._update_saver_path_controls()
+
+    def _update_saver_path_controls(self, mode: Optional[str] = None) -> None:
+        selected_mode = mode or self.saver_mode.currentText()
+        enabled = selected_mode == "path"
+        self.saver_image_path.setEnabled(enabled)
+        if hasattr(self, "saver_browse_button"):
+            self.saver_browse_button.setEnabled(enabled)
 
     def _build_settings_section(self, layout: QtWidgets.QVBoxLayout):
-        self.notice_enabled = StyledToggle("안내창 표시")
+        self.notice_enabled = StyledToggle("안내 팝업 표시")
         self._register_toggle(self.notice_enabled)
         layout.addWidget(self.notice_enabled)
 
         form = QtWidgets.QFormLayout()
-        self.accent_color_button = QtWidgets.QPushButton("테마 색상")
+        self.accent_color_button = QtWidgets.QPushButton("변경")
         self.accent_color_button.setObjectName("ThemeColorButton")
         self.accent_color_button.clicked.connect(self._open_accent_color_dialog)
         self.accent_color_button.setFixedWidth(140)
@@ -1648,6 +1667,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.saver_enabled.setChecked(cfg.saver_enabled)
         self.saver_mode.setCurrentText(cfg.saver_image_mode)
         self.saver_image_path.setText(cfg.image_path)
+        self._update_saver_path_controls(cfg.saver_image_mode)
         self.saver_idle_delay.setValue(cfg.idle_to_show_sec)
         self.saver_active_threshold.setValue(cfg.active_threshold_sec)
         self.saver_poll.setValue(cfg.poll_sec)
