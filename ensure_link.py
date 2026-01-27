@@ -1579,8 +1579,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.activateWindow()
 
     def _bring_dialog_to_front(self, dialog: QtWidgets.QDialog) -> None:
-        original_flags = dialog.windowFlags()
-        dialog.setWindowFlags(original_flags | QtCore.Qt.WindowStaysOnTopHint)
+        dialog.setWindowFlags(dialog.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
         dialog.setWindowState(
             dialog.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive
         )
@@ -1588,12 +1587,6 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog.raise_()
         dialog.activateWindow()
         dialog.setFocus()
-
-        def _restore_flag():
-            dialog.setWindowFlags(original_flags)
-            dialog.show()
-
-        QtCore.QTimer.singleShot(200, _restore_flag)
 
     def _request_settings_open(self):
         if self._opening_settings and not (
