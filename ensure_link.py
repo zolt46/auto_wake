@@ -261,11 +261,11 @@ def build_palette(accent_theme: str) -> dict:
     bg, card, card_alt, topbar, tab_bg = background_variants.get(
         accent_theme, background_variants["sky"]
     )
-    bg = _blend_with_white(bg, 0.18)
-    card = _blend_with_white(card, 0.12)
-    card_alt = _blend_with_white(card_alt, 0.1)
-    topbar = _blend_with_white(topbar, 0.15)
-    tab_bg = _blend_with_white(tab_bg, 0.12)
+    bg = _blend_with_white(bg, 0.08)
+    card = _blend_with_white(card, 0.04)
+    card_alt = _blend_with_white(card_alt, 0.04)
+    topbar = _blend_with_white(topbar, 0.06)
+    tab_bg = _blend_with_white(tab_bg, 0.04)
     return {
         "bg": bg,
         "bg_card": card,
@@ -280,7 +280,7 @@ def build_palette(accent_theme: str) -> dict:
         "tab_active": card,
         "tab_text": "#334155",
         "topbar": topbar,
-        "dialog_bg": card,
+        "dialog_bg": card_alt,
         "dialog_text": "#0f172a",
         "dialog_border": "#cbd5f5",
     }
@@ -490,11 +490,15 @@ class PasswordDialog(QtWidgets.QDialog):
                 [
                     f"QDialog {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}",
                     f"QDialog QLabel {{ color: {palette['dialog_text']}; }}",
-                    f"QDialog QLineEdit {{ background: {palette['bg_card_alt']};"
+                    f"QDialog QLineEdit {{ background: {palette['bg_card']};"
                     f" border: 1px solid {palette['dialog_border']};"
                     " border-radius: 8px; padding: 6px 10px;",
                     f" color: {palette['dialog_text']}; }}",
                     f"QDialog QPushButton {{ background: {palette['accent']}; color: #0b1220;",
+                    " border-radius: 10px; padding: 6px 12px; font-weight: 700; }}",
+                    f"QMessageBox {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}",
+                    f"QMessageBox QLabel {{ color: {palette['dialog_text']}; }}",
+                    f"QMessageBox QPushButton {{ background: {palette['accent']}; color: #0b1220;",
                     " border-radius: 10px; padding: 6px 12px; font-weight: 700; }}",
                 ]
             )
@@ -507,12 +511,13 @@ class PasswordDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호를 입력하세요.")
             return
         if not self._verifier(value):
-            self.message.setText("비밀번호가 올바르지 않습니다.")
+            self.message.setText("비밀번호가 올바르지 않습니다. 다시 입력해 주세요.")
             QtWidgets.QMessageBox.warning(
                 self,
                 "비밀번호 오류",
                 "비밀번호가 올바르지 않습니다. 다시 입력해 주세요.",
             )
+            self.input.clear()
             self.input.selectAll()
             self.input.setFocus()
             return
@@ -526,7 +531,18 @@ class PasswordChangeDialog(QtWidgets.QDialog):
         self.setModal(True)
         self.setFixedSize(360, 220)
         self.setStyleSheet(
-            f"background: {palette['dialog_bg']}; color: {palette['dialog_text']};"
+            " ".join(
+                [
+                    f"QDialog {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}",
+                    f"QDialog QLabel {{ color: {palette['dialog_text']}; }}",
+                    f"QDialog QLineEdit {{ background: {palette['bg_card']};"
+                    f" border: 1px solid {palette['dialog_border']};"
+                    " border-radius: 8px; padding: 6px 10px;",
+                    f" color: {palette['dialog_text']}; }}",
+                    f"QDialog QPushButton {{ background: {palette['accent']}; color: #0b1220;",
+                    " border-radius: 10px; padding: 6px 12px; font-weight: 700; }}",
+                ]
+            )
         )
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel("현재 비밀번호와 새 비밀번호를 입력하세요."))
@@ -772,8 +788,8 @@ class MainWindow(QtWidgets.QMainWindow):
             }}
             QPushButton:hover {{ background: {palette['accent_soft']}; }}
             QPushButton:disabled {{
-                background: {palette['bg_card_alt']};
-                color: {palette['text_muted']};
+                background: {palette['accent_soft']};
+                color: #0b1220;
             }}
             QPushButton#GhostButton {{
                 background: {palette['accent']};
@@ -784,16 +800,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: #0b1220;
             }}
             QPushButton#StartButton:disabled {{
-                background: #334155;
-                color: {palette['text_muted']};
+                background: {palette['accent_soft']};
+                color: #0b1220;
             }}
             QPushButton#StopButton {{
                 background: #f97316;
                 color: #fff7ed;
             }}
             QPushButton#StopButton:disabled {{
-                background: #334155;
-                color: {palette['text_muted']};
+                background: {palette['accent_soft']};
+                color: #0b1220;
             }}
             #NoticeFrame {{
                 background: {palette['bg_card']};
@@ -810,7 +826,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: {palette['dialog_text']};
             }}
             QDialog QLineEdit {{
-                background: {palette['bg_card_alt']};
+                background: {palette['bg_card']};
                 border: 1px solid {palette['dialog_border']};
                 border-radius: 8px;
                 padding: 6px 10px;
@@ -823,13 +839,29 @@ class MainWindow(QtWidgets.QMainWindow):
                 padding: 6px 12px;
                 font-weight: 700;
             }}
+            QMessageBox {{
+                background: {palette['dialog_bg']};
+                color: {palette['dialog_text']};
+            }}
+            QMessageBox QLabel {{
+                color: {palette['dialog_text']};
+            }}
+            QMessageBox QPushButton {{
+                background: {palette['accent']};
+                color: #0b1220;
+                border-radius: 10px;
+                padding: 6px 12px;
+                font-weight: 700;
+            }}
             QTabWidget::pane {{
                 border: 1px solid {palette['border']};
+                border-top: none;
                 border-radius: 12px;
                 background: {palette['bg_card']};
+                margin-top: 6px;
             }}
             QTabWidget::tab-bar {{
-                top: 10px;
+                top: 14px;
             }}
             QTabBar::tab {{
                 background: {palette['tab_bg']};
@@ -857,9 +889,13 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog_style = (
             f"QDialog {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}"
             f" QDialog QLabel {{ color: {palette['dialog_text']}; }}"
-            f" QDialog QLineEdit {{ background: {palette['bg_card_alt']}; border: 1px solid {palette['dialog_border']};"
+            f" QDialog QLineEdit {{ background: {palette['bg_card']}; border: 1px solid {palette['dialog_border']};"
             f" border-radius: 8px; padding: 6px 10px; color: {palette['dialog_text']}; }}"
             f" QDialog QPushButton {{ background: {palette['accent']}; color: #0b1220; border-radius: 10px;"
+            f" padding: 6px 12px; font-weight: 700; }}"
+            f" QMessageBox {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}"
+            f" QMessageBox QLabel {{ color: {palette['dialog_text']}; }}"
+            f" QMessageBox QPushButton {{ background: {palette['accent']}; color: #0b1220; border-radius: 10px;"
             f" padding: 6px 12px; font-weight: 700; }}"
         )
         if self._password_dialog:
@@ -1062,7 +1098,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.chrome_relaunch_cooldown = QtWidgets.QDoubleSpinBox()
         self.chrome_relaunch_cooldown.setRange(1.0, 600.0)
         self.chrome_relaunch_cooldown.setSingleStep(1.0)
-        form.addRow(self._label("강조 색상"), self.accent_theme)
+        form.addRow(self._label("테마 색상"), self.accent_theme)
         form.addRow(self._label("공통 쿨다운(초)"), self.chrome_relaunch_cooldown)
         layout.addLayout(form)
 
@@ -1209,7 +1245,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.activateWindow()
             return
         if self._password_dialog:
-            self._password_dialog.showNormal()
+            self._password_dialog.show()
             self._password_dialog.raise_()
             self._password_dialog.activateWindow()
             return
