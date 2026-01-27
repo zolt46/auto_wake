@@ -5,6 +5,7 @@ from dataclasses import dataclass, asdict
 import hashlib
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -89,6 +90,7 @@ def seconds_since_last_input() -> float:
 @dataclass
 class AppConfig:
     url: str = DEFAULT_URL
+    urls: list[str] = None
     image_path: str = DEFAULT_LOCAL_IMAGE
     work_dir: str = WORK_DIR
     idle_to_show_sec: float = 10.0
@@ -102,6 +104,7 @@ class AppConfig:
     ui_theme: str = "accent"
     saver_image_mode: str = "bundled"
     audio_url: str = DEFAULT_AUDIO_URL
+    audio_urls: list[str] = None
     audio_enabled: bool = True
     audio_window_mode: str = "minimized"
     audio_start_delay_sec: float = 2.0
@@ -117,6 +120,13 @@ class AppConfig:
     password_hash: str = ""
     password_salt: str = ""
     accent_theme: str = "sky"
+    accent_color: str = ""
+
+    def __post_init__(self):
+        if self.urls is None:
+            self.urls = [self.url]
+        if self.audio_urls is None:
+            self.audio_urls = [self.audio_url]
 
     @classmethod
     def from_dict(cls, data: dict) -> "AppConfig":
@@ -128,6 +138,7 @@ class AppConfig:
 
         return cls(
             url=data.get("url", DEFAULT_URL),
+            urls=list(data.get("urls", [])) or [data.get("url", DEFAULT_URL)],
             image_path=data.get("image_path", DEFAULT_LOCAL_IMAGE),
             work_dir=data.get("work_dir", WORK_DIR),
             idle_to_show_sec=float(data.get("idle_to_show_sec", 10.0)),
@@ -143,6 +154,9 @@ class AppConfig:
             ui_theme="accent",
             saver_image_mode=str(data.get("saver_image_mode", "bundled")),
             audio_url=data.get("audio_url", DEFAULT_AUDIO_URL),
+            audio_urls=list(data.get("audio_urls", [])) or [
+                data.get("audio_url", DEFAULT_AUDIO_URL)
+            ],
             audio_enabled=bool(data.get("audio_enabled", True)),
             audio_window_mode=data.get("audio_window_mode", "minimized"),
             audio_start_delay_sec=float(data.get("audio_start_delay_sec", 2.0)),
@@ -164,6 +178,7 @@ class AppConfig:
             password_hash=str(data.get("password_hash", "")),
             password_salt=str(data.get("password_salt", "")),
             accent_theme=str(data.get("accent_theme", "sky")),
+            accent_color=str(data.get("accent_color", "")),
         )
 
 
@@ -221,7 +236,39 @@ def save_config(cfg: AppConfig) -> None:
         log(f"CONFIG save error: {exc}")
 
 
-def build_palette(accent_theme: str) -> dict:
+def _blend_with_white(hex_color: str, ratio: float) -> str:
+    hex_color = hex_color.lstrip("#")
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    r = int(r + (255 - r) * ratio)
+    g = int(g + (255 - g) * ratio)
+    b = int(b + (255 - b) * ratio)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _blend_with_black(hex_color: str, ratio: float) -> str:
+    hex_color = hex_color.lstrip("#")
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    r = int(r * (1 - ratio))
+    g = int(g * (1 - ratio))
+    b = int(b * (1 - ratio))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _normalize_hex_color(value: str) -> str:
+    if not value:
+        return ""
+    if not value.startswith("#"):
+        value = f"#{value}"
+    if len(value) == 4:
+        value = f"#{value[1] * 2}{value[2] * 2}{value[3] * 2}"
+    return value.lower()
+
+
+def build_palette(accent_theme: str, accent_color: str = "") -> dict:
     accents = {
         "sky": ("#0ea5e9", "#38bdf8"),
         "indigo": ("#6366f1", "#818cf8"),
@@ -250,34 +297,75 @@ def build_palette(accent_theme: str) -> dict:
     bg, card, card_alt, topbar, tab_bg = background_variants.get(
         accent_theme, background_variants["sky"]
     )
+    accent_color = _normalize_hex_color(accent_color)
+    if accent_color:
+        accent = accent_color
+        accent_soft = _blend_with_white(accent, 0.35)
+        base_bg = _blend_with_white(accent, 0.9)
+        bg = _blend_with_black(base_bg, 0.08)
+        card = _blend_with_black(_blend_with_white(accent, 0.92), 0.05)
+        card_alt = _blend_with_black(_blend_with_white(accent, 0.95), 0.04)
+        topbar = _blend_with_black(_blend_with_white(accent, 0.86), 0.12)
+        tab_bg = _blend_with_black(_blend_with_white(accent, 0.88), 0.1)
+    else:
+        bg = _blend_with_white(bg, 0.03)
+        card = _blend_with_white(card, 0.02)
+        card_alt = _blend_with_white(card_alt, 0.02)
+        tab_bg = _blend_with_white(tab_bg, 0.02)
+
+        bg = _blend_with_black(bg, 0.08)
+        card = _blend_with_black(card, 0.06)
+        card_alt = _blend_with_black(card_alt, 0.06)
+        tab_bg = _blend_with_black(tab_bg, 0.1)
+    accent_dark = _blend_with_black(accent, 0.32)
+    tab_active = _blend_with_black(tab_bg, 0.24)
+    border = _blend_with_black(tab_bg, 0.18)
     return {
         "bg": bg,
         "bg_card": card,
         "bg_card_alt": card_alt,
         "accent": accent,
         "accent_soft": accent_soft,
+        "accent_dark": accent_dark,
         "text_primary": "#0f172a",
         "text_muted": "#475569",
-        "border": "#cbd5f5",
+        "border": border,
         "bg_dark": "#0f172a",
         "tab_bg": tab_bg,
-        "tab_active": card,
+        "tab_active": tab_active,
         "tab_text": "#334155",
         "topbar": topbar,
-        "dialog_bg": card,
+        "dialog_bg": card_alt,
         "dialog_text": "#0f172a",
         "dialog_border": "#cbd5f5",
     }
 
 
 def find_chrome_exe() -> str:
-    for path in CHROME_CANDIDATES:
-        if os.path.exists(path):
+    env_candidates = [
+        os.path.join(os.environ.get("PROGRAMFILES", ""), "Google", "Chrome", "Application", "chrome.exe"),
+        os.path.join(
+            os.environ.get("PROGRAMFILES(X86)", ""), "Google", "Chrome", "Application", "chrome.exe"
+        ),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "Chrome", "Application", "chrome.exe"),
+        os.path.join(os.environ.get("PROGRAMFILES", ""), "Microsoft", "Edge", "Application", "msedge.exe"),
+        os.path.join(
+            os.environ.get("PROGRAMFILES(X86)", ""), "Microsoft", "Edge", "Application", "msedge.exe"
+        ),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "Application", "msedge.exe"),
+    ]
+    for path in [*CHROME_CANDIDATES, *env_candidates]:
+        if path and os.path.exists(path):
             return path
+    for candidate in ("chrome", "msedge"):
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    log("Chrome/Edge executable not found; falling back to 'chrome' in PATH.")
     return "chrome"
 
 
-def build_chrome_args(url: str, profile_dir: str, mode: str, autoplay: bool) -> list[str]:
+def build_chrome_args(urls: list[str], profile_dir: str, mode: str, autoplay: bool) -> list[str]:
     chrome = find_chrome_exe()
     args = [
         chrome,
@@ -295,7 +383,7 @@ def build_chrome_args(url: str, profile_dir: str, mode: str, autoplay: bool) -> 
         args.append("--start-fullscreen")
     elif mode == "kiosk":
         args.append("--kiosk")
-    args.append(url)
+    args.extend(urls)
     return args
 
 
@@ -308,8 +396,8 @@ def ensure_youtube_autoplay(url: str) -> str:
     return f"{url}{connector}autoplay=1&mute=0&playsinline=1"
 
 
-def launch_chrome(url: str, profile_dir: str, mode: str, autoplay: bool) -> Optional[subprocess.Popen]:
-    args = build_chrome_args(url, profile_dir, mode, autoplay)
+def launch_chrome(urls: list[str], profile_dir: str, mode: str, autoplay: bool) -> Optional[subprocess.Popen]:
+    args = build_chrome_args(urls, profile_dir, mode, autoplay)
     try:
         log(f"Launching chrome: {args}")
         return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -345,17 +433,15 @@ def keep_window_on_top(pid: int) -> None:
 def build_notice_message() -> str:
     return (
         "한국기술교육대학교 참고자료실 도서 검색 전용 PC입니다.\n\n"
-        "현재 사용자님을 위하여 대학 도서관 페이지의 통합검색 화면을 기본 창으로 제공하고 있습니다. "
-        "본 PC는 학습·연구 목적의 정보 탐색을 돕기 위해 운영되며, 규정과 보편적 절차를 준수하는 "
-        "올바른 사용을 권장드립니다. 부적절한 사용이 적발될 경우 관련 규정에 따라 안내 및 조치가 "
-        "이루어질 수 있습니다.\n\n"
-        "사용자님께 도움이 되었으면 좋겠습니다. 방문해 주셔서 진심으로 감사합니다.\n\n"
-        "[전체화면/키오스크 종료 방법] \n"
-        "- F11 키로 전체화면을 해제할 수 있습니다.\n"
-        "- ESC 키를 길게 누르면 일부 전체화면이 해제될 수 있습니다.\n"
-        "- Alt + F4 키로 크롬을 종료할 수 있습니다.\n\n"
-        "크롬이 종료되면 몇 초 후 자동으로 다시 실행됩니다. "
-        "계속 이용을 원하시면 크롬 창을 종료하지 않고 사용해 주세요.\n"
+        "본 PC는 학습·연구 목적의 정보 탐색을 위해 운영됩니다.\n"
+        "올바른 사용을 권장드리며, 규정을 위반하는 경우 안내 및 조치가 이루어질 수 있습니다.\n\n"
+        "이용해 주셔서 감사합니다.\n\n"
+        "[전체화면/키오스크 종료 안내]\n"
+        "• F11: 전체화면 해제\n"
+        "• ESC: 일부 전체화면 해제\n"
+        "• Alt + F4: 크롬 종료\n\n"
+        "크롬이 종료되면 몇 초 후 자동으로 다시 실행됩니다.\n"
+        "계속 이용하려면 크롬 창을 종료하지 않고 사용해 주세요.\n"
     )
 
 
@@ -381,6 +467,7 @@ class StyledToggle(QtWidgets.QAbstractButton):
         self._palette = {
             "accent": palette["accent"],
             "bg_card_alt": palette["bg_card_alt"],
+            "accent_dark": palette["accent_dark"],
             "text_primary": palette["text_primary"],
             "text_muted": palette["text_muted"],
             "knob": palette["bg"],
@@ -395,14 +482,14 @@ class StyledToggle(QtWidgets.QAbstractButton):
 
     def resizeEvent(self, event: QtGui.QResizeEvent):
         super().resizeEvent(event)
-        self._label.setGeometry(0, 0, self.width() - 60, self.height())
+        self._label.setGeometry(60, 0, self.width() - 60, self.height())
 
     def paintEvent(self, event: QtGui.QPaintEvent):
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         toggle_width = 46
         toggle_height = 24
-        x = self.width() - toggle_width
+        x = 0
         y = (self.height() - toggle_height) // 2
         radius = toggle_height / 2
 
@@ -410,7 +497,7 @@ class StyledToggle(QtWidgets.QAbstractButton):
             track_color = QtGui.QColor(self._palette["accent"])
             knob_x = x + toggle_width - toggle_height + 2
         else:
-            track_color = QtGui.QColor(self._palette["bg_card_alt"])
+            track_color = QtGui.QColor(self._palette["accent_dark"])
             knob_x = x + 2
 
         painter.setPen(QtCore.Qt.NoPen)
@@ -419,6 +506,91 @@ class StyledToggle(QtWidgets.QAbstractButton):
         painter.setBrush(QtGui.QColor(self._palette["knob"]))
         painter.drawEllipse(QtCore.QRectF(knob_x, y + 2, toggle_height - 4, toggle_height - 4))
 
+
+class StepperInput(QtWidgets.QWidget):
+    valueChanged = QtCore.Signal(float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+
+        self.minus_button = QtWidgets.QPushButton("◀")
+        self.minus_button.setObjectName("StepperButton")
+        self.plus_button = QtWidgets.QPushButton("▶")
+        self.plus_button.setObjectName("StepperButton")
+        for button in (self.minus_button, self.plus_button):
+            button.setFixedSize(24, 24)
+            button.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+
+        self.spin = QtWidgets.QDoubleSpinBox()
+        self.spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.spin.setAlignment(QtCore.Qt.AlignCenter)
+        self.spin.valueChanged.connect(self.valueChanged.emit)
+        self.spin.setFixedWidth(64)
+
+        self.minus_button.clicked.connect(lambda: self.spin.stepBy(-1))
+        self.plus_button.clicked.connect(lambda: self.spin.stepBy(1))
+
+        layout.addWidget(self.minus_button)
+        layout.addWidget(self.spin)
+        layout.addWidget(self.plus_button)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+
+    def setRange(self, minimum: float, maximum: float) -> None:
+        self.spin.setRange(minimum, maximum)
+
+    def setSingleStep(self, step: float) -> None:
+        self.spin.setSingleStep(step)
+
+    def setDecimals(self, decimals: int) -> None:
+        self.spin.setDecimals(decimals)
+
+    def setValue(self, value: float) -> None:
+        self.spin.setValue(value)
+
+    def value(self) -> float:
+        return self.spin.value()
+
+
+class ModeSelector(QtWidgets.QWidget):
+    currentTextChanged = QtCore.Signal(str)
+
+    def __init__(self, options: list[str], parent=None, labels: Optional[dict[str, str]] = None):
+        super().__init__(parent)
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        self._group = QtWidgets.QButtonGroup(self)
+        self._group.setExclusive(True)
+        self._buttons: dict[str, QtWidgets.QPushButton] = {}
+        self._labels = labels or {}
+        for option in options:
+            button = QtWidgets.QPushButton(self._labels.get(option, option))
+            button.setCheckable(True)
+            button.setObjectName("ModeButton")
+            self._group.addButton(button)
+            self._buttons[option] = button
+            layout.addWidget(button)
+        if options:
+            self._buttons[options[0]].setChecked(True)
+        self._group.buttonClicked.connect(self._emit_current_text)
+
+    def _emit_current_text(self):
+        self.currentTextChanged.emit(self.currentText())
+
+    def currentText(self) -> str:
+        for option, button in self._buttons.items():
+            if button.isChecked():
+                return option
+        return ""
+
+    def setCurrentText(self, text: str) -> None:
+        button = self._buttons.get(text)
+        if button:
+            button.setChecked(True)
+            self._emit_current_text()
 
 class FancyCard(QtWidgets.QFrame):
     def __init__(self, title: str, subtitle: str, parent=None):
@@ -442,6 +614,121 @@ class FancyCard(QtWidgets.QFrame):
         layout.addLayout(self.body_layout)
 
 
+class UrlListDialog(QtWidgets.QDialog):
+    def __init__(self, title: str, urls: list[str], palette: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.setFixedSize(460, 360)
+        self._palette = palette
+        self._urls = urls
+
+        layout = QtWidgets.QVBoxLayout(self)
+        self.list_widget = QtWidgets.QListWidget()
+        self.list_widget.addItems(urls)
+        layout.addWidget(self.list_widget)
+
+        input_row = QtWidgets.QHBoxLayout()
+        self.url_input = QtWidgets.QLineEdit()
+        self.url_input.setPlaceholderText("https://example.com")
+        add_button = QtWidgets.QPushButton("추가")
+        remove_button = QtWidgets.QPushButton("삭제")
+        add_button.clicked.connect(self._add_url)
+        remove_button.clicked.connect(self._remove_selected)
+        input_row.addWidget(self.url_input)
+        input_row.addWidget(add_button)
+        input_row.addWidget(remove_button)
+        layout.addLayout(input_row)
+
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addStretch()
+        ok = QtWidgets.QPushButton("확인")
+        cancel = QtWidgets.QPushButton("취소")
+        ok.clicked.connect(self.accept)
+        cancel.clicked.connect(self.reject)
+        button_row.addWidget(cancel)
+        button_row.addWidget(ok)
+        layout.addLayout(button_row)
+
+        self.setStyleSheet(
+            " ".join(
+                [
+                    f"QDialog {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}",
+                    f"QDialog QLabel {{ color: {palette['dialog_text']}; }}",
+                    f"QDialog QLineEdit {{ background: {palette['bg_card']};"
+                    f" border: 1px solid {palette['dialog_border']};"
+                    " border-radius: 8px; padding: 6px 10px;",
+                    f" color: {palette['dialog_text']}; }}",
+                    f"QDialog QPushButton {{ background: {palette['accent']}; color: #0b1220;",
+                    " border-radius: 10px; padding: 6px 12px; font-weight: 700; }}",
+                    f"QListWidget {{ background: {palette['bg_card']};"
+                    f" border: 1px solid {palette['dialog_border']};"
+                    f" color: {palette['dialog_text']}; }}",
+                ]
+            )
+        )
+
+    def _add_url(self):
+        text = self.url_input.text().strip()
+        if not text:
+            return
+        self.list_widget.addItem(text)
+        self.url_input.clear()
+
+    def _remove_selected(self):
+        for item in self.list_widget.selectedItems():
+            self.list_widget.takeItem(self.list_widget.row(item))
+
+    def urls(self) -> list[str]:
+        return [
+            self.list_widget.item(index).text().strip()
+            for index in range(self.list_widget.count())
+            if self.list_widget.item(index).text().strip()
+        ]
+
+
+class WarningDialog(QtWidgets.QDialog):
+    def __init__(self, message: str, palette: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("비밀번호 오류")
+        self.setModal(True)
+        self.setFixedSize(300, 140)
+        layout = QtWidgets.QVBoxLayout(self)
+        content = QtWidgets.QHBoxLayout()
+        icon_label = QtWidgets.QLabel()
+        icon = self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxWarning)
+        icon_label.setPixmap(icon.pixmap(36, 36))
+        icon_label.setAlignment(QtCore.Qt.AlignTop)
+        content.addWidget(icon_label)
+        label = QtWidgets.QLabel(message)
+        label.setWordWrap(True)
+        content.addWidget(label, 1)
+        layout.addLayout(content)
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addStretch()
+        ok = QtWidgets.QPushButton("확인")
+        ok.setAutoDefault(False)
+        ok.clicked.connect(self.accept)
+        button_row.addWidget(ok)
+        layout.addLayout(button_row)
+        self.setStyleSheet(
+            " ".join(
+                [
+                    f"QDialog {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}",
+                    f"QDialog QLabel {{ color: {palette['dialog_text']}; }}",
+                    f"QDialog QPushButton {{ background: {palette['accent']}; color: #0b1220;",
+                    " border-radius: 10px; padding: 6px 12px; font-weight: 700; }}",
+                ]
+            )
+        )
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+            self.accept()
+            return
+        super().keyPressEvent(event)
+
+
 class PasswordDialog(QtWidgets.QDialog):
     def __init__(self, verifier, palette: dict, parent=None):
         super().__init__(parent)
@@ -450,6 +737,9 @@ class PasswordDialog(QtWidgets.QDialog):
         self.setFixedSize(320, 180)
         self._verifier = verifier
         self._palette = palette
+        self._warning_open = False
+        self._warning_dialog: Optional[WarningDialog] = None
+        self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowStaysOnTopHint)
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel("설정에 들어가려면 비밀번호를 입력하세요."))
         self.input = QtWidgets.QLineEdit()
@@ -461,6 +751,8 @@ class PasswordDialog(QtWidgets.QDialog):
         buttons = QtWidgets.QHBoxLayout()
         cancel = QtWidgets.QPushButton("취소")
         ok = QtWidgets.QPushButton("확인")
+        ok.setAutoDefault(False)
+        cancel.setAutoDefault(False)
         cancel.clicked.connect(self.reject)
         ok.clicked.connect(self._accept_with_validation)
         self.input.returnPressed.connect(self._accept_with_validation)
@@ -468,18 +760,72 @@ class PasswordDialog(QtWidgets.QDialog):
         buttons.addWidget(cancel)
         buttons.addWidget(ok)
         layout.addLayout(buttons)
+        self._action_buttons = [cancel, ok]
         self.input.setFocus()
         self.setStyleSheet(
-            f"background: {palette['dialog_bg']}; color: {palette['dialog_text']};"
+            " ".join(
+                [
+                    f"QDialog {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}",
+                    f"QDialog QLabel {{ color: {palette['dialog_text']}; }}",
+                    f"QDialog QLineEdit {{ background: {palette['bg_card']};"
+                    f" border: 1px solid {palette['dialog_border']};"
+                    " border-radius: 8px; padding: 6px 10px;",
+                    f" color: {palette['dialog_text']}; }}",
+                    f"QDialog QPushButton {{ background: {palette['accent']}; color: #0b1220;",
+                    " border-radius: 10px; padding: 6px 12px; font-weight: 700; }}",
+                    f"QMessageBox {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}",
+                    f"QMessageBox QLabel {{ color: {palette['dialog_text']}; }}",
+                    f"QMessageBox QPushButton {{ background: {palette['accent']}; color: #0b1220;",
+                    " border-radius: 10px; padding: 6px 12px; font-weight: 700; }}",
+                ]
+            )
         )
+
+    def _show_warning(self, message: str) -> None:
+        self._warning_open = True
+        self.input.setEnabled(False)
+        for button in self._action_buttons:
+            button.setEnabled(False)
+        try:
+            self.input.returnPressed.disconnect(self._accept_with_validation)
+        except TypeError:
+            pass
+        self._warning_dialog = WarningDialog(message, self._palette, self)
+        self._warning_dialog.finished.connect(self._restore_focus)
+        self._warning_dialog.open()
+
+    def _restore_focus(self) -> None:
+        self._warning_open = False
+        self.input.setEnabled(True)
+        for button in self._action_buttons:
+            button.setEnabled(True)
+        try:
+            self.input.returnPressed.disconnect(self._accept_with_validation)
+        except TypeError:
+            pass
+        self.input.returnPressed.connect(self._accept_with_validation)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.input.setFocus()
+        self._warning_dialog = None
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if self._warning_open and event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+            event.ignore()
+            return
+        super().keyPressEvent(event)
 
     def _accept_with_validation(self):
         value = self.input.text().strip()
         if not value:
-            self.message.setText("비밀번호를 입력하세요.")
+            self.message.setText("\n비밀번호를 입력하세요.")
+            self._show_warning("\n비밀번호를 입력하세요.")
             return
         if not self._verifier(value):
-            self.message.setText("비밀번호가 올바르지 않습니다.")
+            self.message.setText("비밀번호가 올바르지 않습니다.\n다시 입력해 주세요.")
+            self._show_warning("비밀번호가 올바르지 않습니다.\n다시 입력해 주세요.")
+            self.input.clear()
             self.input.selectAll()
             self.input.setFocus()
             return
@@ -493,7 +839,18 @@ class PasswordChangeDialog(QtWidgets.QDialog):
         self.setModal(True)
         self.setFixedSize(360, 220)
         self.setStyleSheet(
-            f"background: {palette['dialog_bg']}; color: {palette['dialog_text']};"
+            " ".join(
+                [
+                    f"QDialog {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}",
+                    f"QDialog QLabel {{ color: {palette['dialog_text']}; }}",
+                    f"QDialog QLineEdit {{ background: {palette['bg_card']};"
+                    f" border: 1px solid {palette['dialog_border']};"
+                    " border-radius: 8px; padding: 6px 10px;",
+                    f" color: {palette['dialog_text']}; }}",
+                    f"QDialog QPushButton {{ background: {palette['accent']}; color: #0b1220;",
+                    " border-radius: 10px; padding: 6px 12px; font-weight: 700; }}",
+                ]
+            )
         )
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel("현재 비밀번호와 새 비밀번호를 입력하세요."))
@@ -521,13 +878,11 @@ class PasswordChangeDialog(QtWidgets.QDialog):
         layout.addLayout(buttons)
 
 class NoticeWindow(QtWidgets.QWidget):
+    closed = QtCore.Signal()
+
     def __init__(self, palette: dict, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(
-            QtCore.Qt.WindowStaysOnTopHint
-            | QtCore.Qt.FramelessWindowHint
-            | QtCore.Qt.Tool
-        )
+        self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.WindowTitleHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setWindowTitle("AutoWake 안내")
         self.palette = palette
@@ -556,14 +911,25 @@ class NoticeWindow(QtWidgets.QWidget):
         frame = QtWidgets.QFrame()
         frame.setObjectName("NoticeFrame")
         frame_layout = QtWidgets.QVBoxLayout(frame)
+        header_row = QtWidgets.QHBoxLayout()
         title = QtWidgets.QLabel("이용 안내")
         title.setObjectName("NoticeTitle")
+        close_button = QtWidgets.QPushButton("닫기")
+        close_button.clicked.connect(self.close)
+        close_button.setFixedWidth(80)
+        header_row.addWidget(title)
+        header_row.addStretch()
+        header_row.addWidget(close_button)
         message = QtWidgets.QLabel(build_notice_message())
         message.setWordWrap(True)
         message.setObjectName("NoticeMessage")
-        frame_layout.addWidget(title)
+        frame_layout.addLayout(header_row)
         frame_layout.addWidget(message)
         layout.addWidget(frame)
+
+    def closeEvent(self, event: QtGui.QCloseEvent):
+        self.closed.emit()
+        super().closeEvent(event)
 
     def show_centered(self):
         screen = QtGui.QGuiApplication.primaryScreen()
@@ -654,10 +1020,13 @@ class ProcessManager:
     def start(self, mode: str):
         if mode in self.processes and self.processes[mode].poll() is None:
             return
-        args = [sys.executable, os.path.abspath(__file__), "--mode", mode]
+        if getattr(sys, "frozen", False):
+            args = [sys.executable, "--mode", mode]
+        else:
+            args = [sys.executable, os.path.abspath(__file__), "--mode", mode]
         proc = subprocess.Popen(args)
         self.processes[mode] = proc
-        log(f"Spawned worker: {mode}")
+        log(f"Spawned worker: {mode} ({' '.join(args)})")
 
     def stop(self, mode: str):
         proc = self.processes.get(mode)
@@ -679,7 +1048,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cfg = load_config()
         self.process_manager = ProcessManager()
         self.is_running = False
-        self.palette = build_palette(self.cfg.accent_theme)
+        self.palette = build_palette(self.cfg.accent_theme, self.cfg.accent_color)
         self.tray_icon: Optional[QtWidgets.QSystemTrayIcon] = None
         self.tray_menu: Optional[QtWidgets.QMenu] = None
         self.action_start: Optional[QtGui.QAction] = None
@@ -697,13 +1066,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._ensure_default_password()
 
     def _apply_palette(self):
-        self.palette = build_palette(self.cfg.accent_theme)
+        self.palette = build_palette(self.cfg.accent_theme, self.cfg.accent_color)
         palette = self.palette
         stylesheet = f"""
             QMainWindow {{ background: {palette['bg']}; }}
-            QLabel {{ color: {palette['text_primary']}; font-family: 'Pretendard', 'Segoe UI', 'Noto Sans KR', sans-serif; font-size: 14px; font-weight: 600; }}
-            #TopBar {{ background: {palette['topbar']}; border-radius: 14px; border: 1px solid {palette['border']}; }}
-            #TopTitle {{ font-size: 22px; font-weight: 700; }}
+            QLabel {{ color: {palette['text_primary']}; font-family: 'Noto Sans KR', 'Malgun Gothic', 'Segoe UI', sans-serif; font-size: 13px; font-weight: 500; }}
+            #TopBar {{
+                background: {palette['topbar']};
+                border-radius: 14px;
+                border: none;
+            }}
+            #TopTitle {{ font-size: 20px; font-weight: 700; }}
             #StatePill {{
                 background: {palette['bg_card_alt']};
                 border: 1px solid {palette['border']};
@@ -718,15 +1091,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 border-radius: 14px;
                 border: 1px solid {palette['border']};
             }}
-            #CardTitle {{ font-size: 16px; font-weight: 700; }}
-            #CardSubtitle {{ color: {palette['text_muted']}; font-size: 13px; font-weight: 600; }}
-            #FormLabel {{ color: {palette['accent']}; font-size: 14px; font-weight: 700; }}
+            #CardTitle {{ font-size: 15px; font-weight: 700; }}
+            #CardSubtitle {{ color: {palette['text_muted']}; font-size: 12px; font-weight: 500; }}
+            #FormLabel {{ color: {palette['accent']}; font-size: 13px; font-weight: 600; }}
             QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
                 background: {palette['bg_card_alt']};
                 border: 1px solid {palette['border']};
                 padding: 6px 10px;
                 border-radius: 8px;
                 color: {palette['text_primary']};
+                font-size: 13px;
             }}
             QComboBox::drop-down {{ border: none; }}
             QPushButton {{
@@ -737,30 +1111,88 @@ class MainWindow(QtWidgets.QMainWindow):
                 font-weight: 700;
                 font-size: 14px;
             }}
+            QPushButton:focus {{ outline: none; }}
             QPushButton:hover {{ background: {palette['accent_soft']}; }}
+            QPushButton:pressed {{
+                background: {palette['accent_dark']};
+                color: #f8fafc;
+            }}
             QPushButton:disabled {{
-                background: {palette['bg_card_alt']};
-                color: {palette['text_muted']};
+                background: {palette['accent_dark']};
+                color: #0b1220;
             }}
             QPushButton#GhostButton {{
                 background: {palette['accent']};
                 color: #0b1220;
+            }}
+            QPushButton#ModeButton:focus {{ outline: none; }}
+            QPushButton#ModeButton {{
+                background: {palette['bg_card_alt']};
+                color: {palette['text_primary']};
+                border: 1px solid {palette['border']};
+                padding: 6px 10px;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: 600;
+            }}
+            QPushButton#ModeButton:checked {{
+                background: {palette['accent']};
+                color: #0b1220;
+            }}
+            QPushButton#ModeButton:hover {{
+                background: {palette['accent_soft']};
+                color: #0b1220;
+            }}
+            QPushButton#ModeButton:pressed {{
+                background: {palette['accent_dark']};
+                color: #f8fafc;
+            }}
+            QPushButton#StepperButton {{
+                background: {palette['bg_card_alt']};
+                color: {palette['text_primary']};
+                border: 1px solid {palette['border']};
+                border-radius: 10px;
+                min-width: 24px;
+                min-height: 24px;
+                padding: 0px;
+                font-size: 14px;
+                font-weight: 700;
+            }}
+            QPushButton#StepperButton:hover {{
+                background: {palette['accent_soft']};
+                color: #0b1220;
+            }}
+            QPushButton#StepperButton:pressed {{
+                background: {palette['accent_dark']};
+                color: #f8fafc;
+            }}
+            QPushButton#ThemeColorButton {{
+                background: {palette['accent']};
+                color: #0b1220;
+                border-radius: 10px;
+                padding: 6px 12px;
+                font-weight: 700;
+            }}
+            QPushButton#ThemeColorButton:hover {{ background: {palette['accent_soft']}; }}
+            QPushButton#ThemeColorButton:pressed {{
+                background: {palette['accent_dark']};
+                color: #f8fafc;
             }}
             QPushButton#StartButton {{
                 background: {palette['accent']};
                 color: #0b1220;
             }}
             QPushButton#StartButton:disabled {{
-                background: #334155;
-                color: {palette['text_muted']};
+                background: {palette['bg_dark']};
+                color: #f8fafc;
             }}
             QPushButton#StopButton {{
                 background: #f97316;
                 color: #fff7ed;
             }}
             QPushButton#StopButton:disabled {{
-                background: #334155;
-                color: {palette['text_muted']};
+                background: {palette['bg_dark']};
+                color: #f8fafc;
             }}
             #NoticeFrame {{
                 background: {palette['bg_card']};
@@ -777,7 +1209,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: {palette['dialog_text']};
             }}
             QDialog QLineEdit {{
-                background: {palette['bg_card_alt']};
+                background: {palette['bg_card']};
                 border: 1px solid {palette['dialog_border']};
                 border-radius: 8px;
                 padding: 6px 10px;
@@ -790,23 +1222,62 @@ class MainWindow(QtWidgets.QMainWindow):
                 padding: 6px 12px;
                 font-weight: 700;
             }}
+            QMessageBox {{
+                background: {palette['dialog_bg']};
+                color: {palette['dialog_text']};
+            }}
+            QMessageBox QLabel {{
+                color: {palette['dialog_text']};
+            }}
+            QMessageBox QPushButton {{
+                background: {palette['accent']};
+                color: #0b1220;
+                border-radius: 10px;
+                padding: 6px 12px;
+                font-weight: 700;
+            }}
             QTabWidget::pane {{
-                border: 1px solid {palette['border']};
+                border: none;
                 border-radius: 12px;
                 background: {palette['bg_card']};
+                margin-top: 14px;
             }}
             QTabWidget::tab-bar {{
-                top: 18px;
+                top: 10px;
+                left: 32px;
+            }}
+            QTabWidget::tab-bar, QTabBar::tab-bar {{
+                border: none;
+                background: transparent;
+            }}
+            QTabWidget::pane, QTabWidget::tab-bar {{
+                border-top: none;
+            }}
+            QTabBar::base {{
+                border: none;
+                background: transparent;
+            }}
+            QTabBar::scroller {{
+                border: none;
+                background: transparent;
+            }}
+            QTabBar::tab:!selected {{
+                border-bottom: none;
             }}
             QTabBar::tab {{
                 background: {palette['tab_bg']};
-                color: {palette['tab_text']};
-                padding: 8px 16px;
+                color: {palette['text_primary']};
+                padding: 6px 12px;
                 margin-right: 6px;
+                margin-bottom: 0px;
                 border-top-left-radius: 10px;
                 border-top-right-radius: 10px;
-                font-weight: 700;
+                border: none;
+                font-size: 13px;
+                font-weight: 600;
             }}
+            QTabBar::tab:focus {{ outline: none; }}
+            QTabBar::tab:hover {{ background: {palette['accent_soft']}; color: #0b1220; }}
             QTabBar::tab:selected {{
                 background: {palette['tab_active']};
                 color: {palette['text_primary']};
@@ -817,6 +1288,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tray_icon.setIcon(self._build_tray_icon())
         for toggle in getattr(self, "_toggles", []):
             toggle.set_palette(self.palette)
+        if hasattr(self, "accent_color_button"):
+            self._update_accent_color_button(self.cfg.accent_color or self.palette["accent"])
+        self._update_run_state_labels()
         self._apply_dialog_palette()
 
     def _apply_dialog_palette(self):
@@ -824,9 +1298,13 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog_style = (
             f"QDialog {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}"
             f" QDialog QLabel {{ color: {palette['dialog_text']}; }}"
-            f" QDialog QLineEdit {{ background: {palette['bg_card_alt']}; border: 1px solid {palette['dialog_border']};"
+            f" QDialog QLineEdit {{ background: {palette['bg_card']}; border: 1px solid {palette['dialog_border']};"
             f" border-radius: 8px; padding: 6px 10px; color: {palette['dialog_text']}; }}"
             f" QDialog QPushButton {{ background: {palette['accent']}; color: #0b1220; border-radius: 10px;"
+            f" padding: 6px 12px; font-weight: 700; }}"
+            f" QMessageBox {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}"
+            f" QMessageBox QLabel {{ color: {palette['dialog_text']}; }}"
+            f" QMessageBox QPushButton {{ background: {palette['accent']}; color: #0b1220; border-radius: 10px;"
             f" padding: 6px 12px; font-weight: 700; }}"
         )
         if self._password_dialog:
@@ -875,8 +1353,8 @@ class MainWindow(QtWidgets.QMainWindow):
         tabs.setElideMode(QtCore.Qt.ElideRight)
 
         self.audio_card = FancyCard(
-            "음원 창",
-            "YouTube 포함 음원 창을 별도 프로세스로 실행하고 자동 재생합니다.",
+            "음원",
+            "YouTube 포함 음원을 별도 프로세스로 실행하고 자동 재생합니다.",
         )
         self._build_audio_section(self.audio_card.body_layout)
         audio_tab = QtWidgets.QWidget()
@@ -885,8 +1363,8 @@ class MainWindow(QtWidgets.QMainWindow):
         audio_layout.addStretch()
 
         self.target_card = FancyCard(
-            "특정 URL 창",
-            "키오스크/전체화면/일반 모드를 선택할 수 있는 대상 창입니다.",
+            "URL",
+            "키오스크/전체화면/일반/최소화 모드를 선택할 수 있는 URL 창입니다.",
         )
         self._build_target_section(self.target_card.body_layout)
         target_tab = QtWidgets.QWidget()
@@ -914,8 +1392,8 @@ class MainWindow(QtWidgets.QMainWindow):
         settings_layout.addWidget(self.general_card)
         settings_layout.addStretch()
 
-        tabs.addTab(audio_tab, "음원 창 옵션")
-        tabs.addTab(target_tab, "URL 창 옵션")
+        tabs.addTab(audio_tab, "음원 옵션")
+        tabs.addTab(target_tab, "URL 옵션")
         tabs.addTab(saver_tab, "스크린 세이버 옵션")
         tabs.addTab(settings_tab, "프로그램 설정")
 
@@ -923,22 +1401,32 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(central)
 
     def _build_audio_section(self, layout: QtWidgets.QVBoxLayout):
-        self.audio_enabled = StyledToggle("음원 창 사용")
+        self.audio_enabled = StyledToggle("음원 사용")
         self._register_toggle(self.audio_enabled)
         layout.addWidget(self.audio_enabled)
 
         form = QtWidgets.QFormLayout()
         self.audio_url = QtWidgets.QLineEdit()
-        self.audio_mode = QtWidgets.QComboBox()
-        self.audio_mode.addItems(["minimized", "normal", "fullscreen", "kiosk"])
-        self.audio_start_delay = QtWidgets.QDoubleSpinBox()
+        self.audio_url.setReadOnly(True)
+        self.audio_url_edit = QtWidgets.QPushButton("수정")
+        self.audio_url_edit.clicked.connect(self._edit_audio_urls)
+        audio_url_row = QtWidgets.QHBoxLayout()
+        audio_url_row.addWidget(self.audio_url)
+        audio_url_row.addWidget(self.audio_url_edit)
+        self.audio_mode = ModeSelector(
+            ["minimized", "normal", "fullscreen", "kiosk"],
+            labels={"minimized": "최소화", "normal": "일반 창", "fullscreen": "전체화면", "kiosk": "키오스크"},
+        )
+        self.audio_start_delay = StepperInput()
         self.audio_start_delay.setRange(0.0, 60.0)
         self.audio_start_delay.setSingleStep(0.5)
-        self.audio_relaunch_cooldown = QtWidgets.QDoubleSpinBox()
+        self.audio_start_delay.setDecimals(2)
+        self.audio_relaunch_cooldown = StepperInput()
         self.audio_relaunch_cooldown.setRange(1.0, 600.0)
         self.audio_relaunch_cooldown.setSingleStep(1.0)
-        form.addRow(self._label("음원 URL"), self.audio_url)
-        form.addRow(self._label("창 모드"), self.audio_mode)
+        self.audio_relaunch_cooldown.setDecimals(2)
+        form.addRow(self._label("음원 URL"), audio_url_row)
+        form.addRow(self._label("시작 창 모드"), self.audio_mode)
         form.addRow(self._label("시작 지연(초)"), self.audio_start_delay)
         form.addRow(self._label("재실행 쿨다운(초)"), self.audio_relaunch_cooldown)
         layout.addLayout(form)
@@ -949,6 +1437,36 @@ class MainWindow(QtWidgets.QMainWindow):
         label.setObjectName("FormLabel")
         return label
 
+    def _format_url_summary(self, urls: list[str], fallback: str) -> str:
+        cleaned = [item for item in (urls or []) if item]
+        if not cleaned:
+            return fallback
+        if len(cleaned) == 1:
+            return cleaned[0]
+        return f"{cleaned[0]} 외 {len(cleaned) - 1}개"
+
+    def _update_audio_url_display(self):
+        self.audio_url.setText(self._format_url_summary(self.audio_urls, DEFAULT_AUDIO_URL))
+
+    def _update_target_url_display(self):
+        self.target_url.setText(self._format_url_summary(self.target_urls, DEFAULT_URL))
+
+    def _edit_audio_urls(self):
+        dialog = UrlListDialog("음원 URL 편집", list(self.audio_urls), self.palette, self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            urls = dialog.urls()
+            self.audio_urls = urls or [DEFAULT_AUDIO_URL]
+            self._update_audio_url_display()
+            self._autosave()
+
+    def _edit_target_urls(self):
+        dialog = UrlListDialog("URL 목록 편집", list(self.target_urls), self.palette, self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            urls = dialog.urls()
+            self.target_urls = urls or [DEFAULT_URL]
+            self._update_target_url_display()
+            self._autosave()
+
     def _register_toggle(self, toggle: StyledToggle) -> None:
         if not hasattr(self, "_toggles"):
             self._toggles = []
@@ -956,25 +1474,36 @@ class MainWindow(QtWidgets.QMainWindow):
         toggle.set_palette(self.palette)
 
     def _build_target_section(self, layout: QtWidgets.QVBoxLayout):
-        self.target_enabled = StyledToggle("특정 URL 창 사용")
+        self.target_enabled = StyledToggle("URL 사용")
         self._register_toggle(self.target_enabled)
         layout.addWidget(self.target_enabled)
 
         form = QtWidgets.QFormLayout()
         self.target_url = QtWidgets.QLineEdit()
-        self.target_mode = QtWidgets.QComboBox()
-        self.target_mode.addItems(["normal", "fullscreen", "kiosk", "minimized"])
-        self.target_start_delay = QtWidgets.QDoubleSpinBox()
+        self.target_url.setReadOnly(True)
+        self.target_url_edit = QtWidgets.QPushButton("수정")
+        self.target_url_edit.clicked.connect(self._edit_target_urls)
+        target_url_row = QtWidgets.QHBoxLayout()
+        target_url_row.addWidget(self.target_url)
+        target_url_row.addWidget(self.target_url_edit)
+        self.target_mode = ModeSelector(
+            ["normal", "fullscreen", "kiosk", "minimized"],
+            labels={"minimized": "최소화", "normal": "일반 창", "fullscreen": "전체화면", "kiosk": "키오스크"},
+        )
+        self.target_start_delay = StepperInput()
         self.target_start_delay.setRange(0.0, 60.0)
         self.target_start_delay.setSingleStep(0.5)
-        self.target_relaunch_cooldown = QtWidgets.QDoubleSpinBox()
+        self.target_start_delay.setDecimals(2)
+        self.target_relaunch_cooldown = StepperInput()
         self.target_relaunch_cooldown.setRange(1.0, 600.0)
         self.target_relaunch_cooldown.setSingleStep(1.0)
-        self.target_refocus_interval = QtWidgets.QDoubleSpinBox()
+        self.target_relaunch_cooldown.setDecimals(2)
+        self.target_refocus_interval = StepperInput()
         self.target_refocus_interval.setRange(1.0, 60.0)
         self.target_refocus_interval.setSingleStep(1.0)
-        form.addRow(self._label("대상 URL"), self.target_url)
-        form.addRow(self._label("창 모드"), self.target_mode)
+        self.target_refocus_interval.setDecimals(2)
+        form.addRow(self._label("URL"), target_url_row)
+        form.addRow(self._label("시작 창 모드"), self.target_mode)
         form.addRow(self._label("시작 지연(초)"), self.target_start_delay)
         form.addRow(self._label("재실행 쿨다운(초)"), self.target_relaunch_cooldown)
         form.addRow(self._label("재포커스 간격(초)"), self.target_refocus_interval)
@@ -986,50 +1515,70 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.saver_enabled)
 
         form = QtWidgets.QFormLayout()
-        self.saver_mode = QtWidgets.QComboBox()
-        self.saver_mode.addItems(["bundled", "path", "generated"])
+        self.saver_mode = ModeSelector(
+            ["bundled", "path", "generated"],
+            labels={"bundled": "기본 이미지", "path": "사용자 지정", "generated": "로드 실패 자동 생성"},
+        )
         self.saver_image_path = QtWidgets.QLineEdit()
-        browse = QtWidgets.QPushButton("찾기")
-        browse.clicked.connect(self._browse_image)
-        image_row = QtWidgets.QHBoxLayout()
+        self.saver_browse_button = QtWidgets.QPushButton("찾기")
+        self.saver_browse_button.clicked.connect(self._browse_image)
+        self.saver_mode.currentTextChanged.connect(self._update_saver_path_controls)
+        self.saver_path_row = QtWidgets.QWidget()
+        image_row = QtWidgets.QHBoxLayout(self.saver_path_row)
+        image_row.setContentsMargins(0, 0, 0, 0)
         image_row.addWidget(self.saver_image_path)
-        image_row.addWidget(browse)
+        image_row.addWidget(self.saver_browse_button)
 
-        self.saver_idle_delay = QtWidgets.QDoubleSpinBox()
+        self.saver_idle_delay = StepperInput()
         self.saver_idle_delay.setRange(1.0, 3600.0)
         self.saver_idle_delay.setSingleStep(1.0)
-        self.saver_active_threshold = QtWidgets.QDoubleSpinBox()
+        self.saver_idle_delay.setDecimals(2)
+        self.saver_active_threshold = StepperInput()
         self.saver_active_threshold.setRange(0.1, 60.0)
         self.saver_active_threshold.setSingleStep(0.1)
-        self.saver_poll = QtWidgets.QDoubleSpinBox()
+        self.saver_active_threshold.setDecimals(2)
+        self.saver_poll = StepperInput()
         self.saver_poll.setRange(0.1, 10.0)
         self.saver_poll.setSingleStep(0.1)
-        self.saver_start_delay = QtWidgets.QDoubleSpinBox()
+        self.saver_poll.setDecimals(2)
+        self.saver_start_delay = StepperInput()
         self.saver_start_delay.setRange(0.0, 60.0)
         self.saver_start_delay.setSingleStep(0.5)
+        self.saver_start_delay.setDecimals(2)
 
         form.addRow(self._label("이미지 모드"), self.saver_mode)
-        form.addRow(self._label("이미지 경로"), image_row)
+        self.saver_path_label = self._label("이미지 경로")
+        form.addRow(self.saver_path_label, self.saver_path_row)
         form.addRow(self._label("표시 대기(초)"), self.saver_idle_delay)
         form.addRow(self._label("활동 감지 임계(초)"), self.saver_active_threshold)
         form.addRow(self._label("폴링 주기(초)"), self.saver_poll)
         form.addRow(self._label("시작 지연(초)"), self.saver_start_delay)
         layout.addLayout(form)
+        self._update_saver_path_controls()
+
+    def _update_saver_path_controls(self, mode: Optional[str] = None) -> None:
+        selected_mode = mode or self.saver_mode.currentText()
+        enabled = selected_mode == "path"
+        self.saver_image_path.setEnabled(enabled)
+        self.saver_browse_button.setEnabled(enabled)
+        self.saver_path_row.setVisible(enabled)
+        self.saver_path_label.setVisible(enabled)
 
     def _build_settings_section(self, layout: QtWidgets.QVBoxLayout):
-        self.notice_enabled = StyledToggle("안내창 표시")
+        self.notice_enabled = StyledToggle("안내 팝업 표시")
         self._register_toggle(self.notice_enabled)
         layout.addWidget(self.notice_enabled)
 
         form = QtWidgets.QFormLayout()
-        self.accent_theme = QtWidgets.QComboBox()
-        self.accent_theme.addItems(
-            ["sky", "indigo", "emerald", "rose", "amber", "teal", "violet", "lime", "cyan", "pink"]
-        )
-        self.chrome_relaunch_cooldown = QtWidgets.QDoubleSpinBox()
+        self.accent_color_button = QtWidgets.QPushButton("변경")
+        self.accent_color_button.setObjectName("ThemeColorButton")
+        self.accent_color_button.clicked.connect(self._open_accent_color_dialog)
+        self.accent_color_button.setFixedWidth(140)
+        self.chrome_relaunch_cooldown = StepperInput()
         self.chrome_relaunch_cooldown.setRange(1.0, 600.0)
         self.chrome_relaunch_cooldown.setSingleStep(1.0)
-        form.addRow(self._label("강조 색상"), self.accent_theme)
+        self.chrome_relaunch_cooldown.setDecimals(2)
+        form.addRow(self._label("테마 색상"), self.accent_color_button)
         form.addRow(self._label("공통 쿨다운(초)"), self.chrome_relaunch_cooldown)
         layout.addLayout(form)
 
@@ -1038,12 +1587,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.config_path.setReadOnly(True)
         open_button = QtWidgets.QPushButton("설정 파일 경로 변경")
         open_button.clicked.connect(self._change_work_dir)
+        open_button.setFixedWidth(160)
         path_row.addWidget(self.config_path)
         path_row.addWidget(open_button)
         layout.addLayout(path_row)
 
         self.change_password_button = QtWidgets.QPushButton("비밀번호 변경")
         self.change_password_button.clicked.connect(self._change_password)
+        self.change_password_button.setFixedWidth(140)
         layout.addWidget(self.change_password_button)
 
     def _browse_image(self):
@@ -1118,6 +1669,38 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cfg.admin_password = ""
         save_config(self.cfg)
 
+    def _update_accent_color_button(self, color_hex: str) -> None:
+        if not color_hex:
+            color_hex = self.palette["accent"]
+        self.accent_color_button.setStyleSheet(
+            " ".join(
+                [
+                    f"background: {color_hex};",
+                    "color: #0b1220;",
+                    "border-radius: 10px;",
+                    "padding: 6px 12px;",
+                    "font-weight: 700;",
+                ]
+            )
+        )
+
+    def _open_accent_color_dialog(self):
+        current_color = QtGui.QColor(self.cfg.accent_color or self.palette["accent"])
+        dialog = QtWidgets.QColorDialog(current_color, self)
+        dialog.setOption(QtWidgets.QColorDialog.ShowAlphaChannel, False)
+        dialog.setOption(QtWidgets.QColorDialog.DontUseNativeDialog, True)
+        dialog.currentColorChanged.connect(
+            lambda color: self._update_accent_color_button(color.name())
+        )
+        original_color = self.cfg.accent_color
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            selected = dialog.currentColor().name()
+            self.cfg.accent_color = selected
+            save_config(self.cfg)
+            self._apply_palette()
+        else:
+            self._update_accent_color_button(original_color or self.palette["accent"])
+
     def _build_tray_icon(self) -> QtGui.QIcon:
         size = 64
         pixmap = QtGui.QPixmap(size, size)
@@ -1164,33 +1747,49 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_start.setEnabled(not self.is_running)
         self.action_stop.setEnabled(self.is_running)
 
+    def _bring_window_to_front(self) -> None:
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _bring_dialog_to_front(self, dialog: QtWidgets.QDialog) -> None:
+        dialog.setWindowFlags(dialog.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
+        dialog.setWindowState(
+            dialog.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive
+        )
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+        dialog.setFocus()
+
     def _request_settings_open(self):
+        if self._opening_settings and not (
+            self._password_dialog and self._password_dialog.isVisible()
+        ):
+            self._opening_settings = False
         if self._opening_settings:
             return
-        if self.isVisible():
-            self.raise_()
-            self.activateWindow()
-            return
-        if self._password_dialog and self._password_dialog.isVisible():
-            self._password_dialog.raise_()
-            self._password_dialog.activateWindow()
+        if self._password_dialog:
+            self._password_dialog.close()
+            self._password_dialog = None
+        if self.isVisible() or self.isMinimized():
+            self._bring_window_to_front()
             return
         self._opening_settings = True
         self._password_dialog = PasswordDialog(self._verify_password, self.palette, self)
-        self._password_dialog.finished.connect(self._clear_password_dialog)
-        if self._password_dialog.exec() != QtWidgets.QDialog.Accepted:
-            self._opening_settings = False
-            return
-        self.showNormal()
-        self.resize(self.minimumSize())
-        self.raise_()
-        self.activateWindow()
-        self._opening_settings = False
+        self._password_dialog.finished.connect(self._handle_password_finished)
+        self._password_dialog.open()
+        self._bring_dialog_to_front(self._password_dialog)
 
     def _verify_password(self, value: str) -> bool:
         return verify_password(value, self.cfg.password_hash, self.cfg.password_salt)
 
-    def _clear_password_dialog(self):
+    def _handle_password_finished(self, result: int) -> None:
+        if result == QtWidgets.QDialog.Accepted:
+            self.showNormal()
+            self.resize(self.minimumSize())
+            self.raise_()
+            self.activateWindow()
         self._password_dialog = None
         self._opening_settings = False
 
@@ -1208,13 +1807,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._loading = True
         cfg = self.cfg
         self.audio_enabled.setChecked(cfg.audio_enabled)
-        self.audio_url.setText(cfg.audio_url)
+        self.audio_urls = list(cfg.audio_urls or [cfg.audio_url])
+        self._update_audio_url_display()
         self.audio_mode.setCurrentText(cfg.audio_window_mode)
         self.audio_start_delay.setValue(cfg.audio_start_delay_sec)
         self.audio_relaunch_cooldown.setValue(cfg.audio_relaunch_cooldown_sec)
 
         self.target_enabled.setChecked(cfg.target_enabled)
-        self.target_url.setText(cfg.url)
+        self.target_urls = list(cfg.urls or [cfg.url])
+        self._update_target_url_display()
         self.target_mode.setCurrentText(cfg.target_window_mode)
         self.target_start_delay.setValue(cfg.target_start_delay_sec)
         self.target_relaunch_cooldown.setValue(cfg.target_relaunch_cooldown_sec)
@@ -1223,13 +1824,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.saver_enabled.setChecked(cfg.saver_enabled)
         self.saver_mode.setCurrentText(cfg.saver_image_mode)
         self.saver_image_path.setText(cfg.image_path)
+        self._update_saver_path_controls(cfg.saver_image_mode)
         self.saver_idle_delay.setValue(cfg.idle_to_show_sec)
         self.saver_active_threshold.setValue(cfg.active_threshold_sec)
         self.saver_poll.setValue(cfg.poll_sec)
         self.saver_start_delay.setValue(cfg.saver_start_delay_sec)
 
         self.notice_enabled.setChecked(cfg.notice_enabled)
-        self.accent_theme.setCurrentText(cfg.accent_theme)
+        self._update_accent_color_button(cfg.accent_color or self.palette["accent"])
         self.chrome_relaunch_cooldown.setValue(cfg.chrome_relaunch_cooldown_sec)
         self.config_path.setText(cfg.work_dir)
         self._update_run_state_labels()
@@ -1237,8 +1839,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _gather_config(self) -> AppConfig:
         target_mode = self.target_mode.currentText()
+        target_urls = list(self.target_urls or [])
+        audio_urls = list(self.audio_urls or [])
+        primary_target = target_urls[0] if target_urls else DEFAULT_URL
+        primary_audio = audio_urls[0] if audio_urls else DEFAULT_AUDIO_URL
         cfg = AppConfig(
-            url=self.target_url.text(),
+            url=primary_target,
+            urls=target_urls or [primary_target],
             image_path=self.saver_image_path.text(),
             work_dir=self.cfg.work_dir,
             idle_to_show_sec=self.saver_idle_delay.value(),
@@ -1251,7 +1858,8 @@ class MainWindow(QtWidgets.QMainWindow):
             chrome_repeat=self.cfg.chrome_repeat,
             ui_theme="accent",
             saver_image_mode=self.saver_mode.currentText(),
-            audio_url=self.audio_url.text(),
+            audio_url=primary_audio,
+            audio_urls=audio_urls or [primary_audio],
             audio_enabled=self.audio_enabled.isChecked(),
             audio_window_mode=self.audio_mode.currentText(),
             audio_start_delay_sec=self.audio_start_delay.value(),
@@ -1266,7 +1874,8 @@ class MainWindow(QtWidgets.QMainWindow):
             admin_password="",
             password_hash=self.cfg.password_hash,
             password_salt=self.cfg.password_salt,
-            accent_theme=self.accent_theme.currentText(),
+            accent_theme=self.cfg.accent_theme,
+            accent_color=self.cfg.accent_color,
         )
         return cfg
 
@@ -1285,18 +1894,15 @@ class MainWindow(QtWidgets.QMainWindow):
         for widget in widgets:
             widget.toggled.connect(self._autosave)
         for widget in [
-            self.audio_url,
             self.saver_image_path,
-            self.target_url,
         ]:
             widget.textEdited.connect(self._autosave)
         for widget in [
             self.audio_mode,
             self.target_mode,
             self.saver_mode,
-            self.accent_theme,
         ]:
-            widget.currentIndexChanged.connect(self._autosave)
+            widget.currentTextChanged.connect(self._autosave)
         for widget in [
             self.audio_start_delay,
             self.audio_relaunch_cooldown,
@@ -1353,10 +1959,26 @@ class AudioWorker:
         self.proc: Optional[subprocess.Popen] = None
         self.last_launch = 0.0
         self.pending_launch_at: Optional[float] = None
+        self.last_config_signature: Optional[tuple] = None
 
     def run(self):
         while True:
             self.cfg = load_config()
+            config_signature = (
+                tuple(self.cfg.audio_urls or [self.cfg.audio_url]),
+                self.cfg.audio_window_mode,
+                self.cfg.audio_start_delay_sec,
+                self.cfg.audio_relaunch_cooldown_sec,
+                self.cfg.audio_enabled,
+            )
+            if self.last_config_signature is None:
+                self.last_config_signature = config_signature
+            elif config_signature != self.last_config_signature:
+                self.last_config_signature = config_signature
+                if self.proc and self.proc.poll() is None:
+                    self._stop_proc()
+                    self.pending_launch_at = time.time() + self.cfg.audio_start_delay_sec
+                    self.last_launch = 0.0
             if not self.cfg.audio_enabled:
                 self._stop_proc()
                 self.pending_launch_at = None
@@ -1370,10 +1992,11 @@ class AudioWorker:
             if self.pending_launch_at is not None:
                 now = time.time()
                 if now >= self.pending_launch_at:
-                    url = ensure_youtube_autoplay(self.cfg.audio_url)
+                    candidates = self.cfg.audio_urls or [self.cfg.audio_url]
+                    url = ensure_youtube_autoplay(random.choice(candidates))
                     profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "audio")
                     os.makedirs(profile, exist_ok=True)
-                    self.proc = launch_chrome(url, profile, self.cfg.audio_window_mode, True)
+                    self.proc = launch_chrome([url], profile, self.cfg.audio_window_mode, True)
                     self.last_launch = time.time()
                     self.pending_launch_at = None
             time.sleep(max(self.cfg.poll_sec, 0.2))
@@ -1392,19 +2015,41 @@ class TargetWorker(QtCore.QObject):
         self.last_launch = 0.0
         self.last_refocus = 0.0
         self.pending_launch_at: Optional[float] = None
-        self.palette_key = self.cfg.accent_theme
-        self.palette = build_palette(self.palette_key)
+        self.last_config_signature: Optional[tuple] = None
+        self.palette_key = (self.cfg.accent_theme, self.cfg.accent_color)
+        self.palette = build_palette(self.cfg.accent_theme, self.cfg.accent_color)
         self.notice = NoticeWindow(self.palette)
+        self.notice.closed.connect(self._dismiss_notice)
+        self.notice_dismissed = False
+        self.last_notice_enabled = self.cfg.notice_enabled
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self._tick)
         self.timer.start(int(max(self.cfg.poll_sec, 0.2) * 1000))
 
+    def _dismiss_notice(self):
+        self.notice_dismissed = True
+
     def _tick(self):
         self.cfg = load_config()
-        new_key = self.cfg.accent_theme
+        config_signature = (
+            tuple(self.cfg.urls or [self.cfg.url]),
+            self.cfg.target_window_mode,
+            self.cfg.target_start_delay_sec,
+            self.cfg.target_relaunch_cooldown_sec,
+            self.cfg.target_enabled,
+        )
+        if self.last_config_signature is None:
+            self.last_config_signature = config_signature
+        elif config_signature != self.last_config_signature:
+            self.last_config_signature = config_signature
+            if self.proc and self.proc.poll() is None:
+                self._stop_proc()
+                self.pending_launch_at = time.time() + self.cfg.target_start_delay_sec
+                self.last_launch = 0.0
+        new_key = (self.cfg.accent_theme, self.cfg.accent_color)
         if new_key != self.palette_key:
             self.palette_key = new_key
-            self.palette = build_palette(new_key)
+            self.palette = build_palette(self.cfg.accent_theme, self.cfg.accent_color)
             self.notice.palette = self.palette
             self.notice.setStyleSheet(
                 f"""
@@ -1423,7 +2068,11 @@ class TargetWorker(QtCore.QObject):
                 }}
                 """
             )
-        if self.cfg.notice_enabled and self.cfg.target_enabled:
+        if self.cfg.notice_enabled and not self.last_notice_enabled:
+            self.notice_dismissed = False
+        self.last_notice_enabled = self.cfg.notice_enabled
+
+        if self.cfg.notice_enabled and self.cfg.target_enabled and not self.notice_dismissed:
             if not self.notice.isVisible():
                 self.notice.show_centered()
         else:
@@ -1445,8 +2094,9 @@ class TargetWorker(QtCore.QObject):
             if now >= self.pending_launch_at:
                 profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "target")
                 os.makedirs(profile, exist_ok=True)
+                urls = self.cfg.urls or [self.cfg.url]
                 self.proc = launch_chrome(
-                    self.cfg.url,
+                    urls,
                     profile,
                     self.cfg.target_window_mode,
                     False,
@@ -1470,8 +2120,8 @@ class SaverWorker(QtCore.QObject):
     def __init__(self):
         super().__init__()
         self.cfg = load_config()
-        self.palette_key = self.cfg.accent_theme
-        self.palette = build_palette(self.palette_key)
+        self.palette_key = (self.cfg.accent_theme, self.cfg.accent_color)
+        self.palette = build_palette(self.cfg.accent_theme, self.cfg.accent_color)
         self.window = SaverWindow(self.cfg, self.palette)
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self._tick)
@@ -1480,10 +2130,10 @@ class SaverWorker(QtCore.QObject):
 
     def _tick(self):
         self.cfg = load_config()
-        new_key = self.cfg.accent_theme
+        new_key = (self.cfg.accent_theme, self.cfg.accent_color)
         if new_key != self.palette_key:
             self.palette_key = new_key
-            self.palette = build_palette(new_key)
+            self.palette = build_palette(self.cfg.accent_theme, self.cfg.accent_color)
             self.window.palette = self.palette
         self.window.cfg = self.cfg
         if not self.cfg.saver_enabled:
