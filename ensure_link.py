@@ -236,16 +236,16 @@ def build_palette(accent_theme: str) -> dict:
     }
     accent, accent_soft = accents.get(accent_theme, accents["sky"])
     background_variants = {
-        "sky": ("#0f172a", "#111f34", "#1f2a44", "#111f34", "#0d1a2c"),
-        "indigo": ("#1e1b4b", "#252659", "#2f2c6b", "#252659", "#1a1740"),
-        "emerald": ("#064e3b", "#0b5f49", "#106d55", "#0b5f49", "#06443a"),
-        "rose": ("#4c0519", "#5a0a22", "#6b102c", "#5a0a22", "#430416"),
-        "amber": ("#4a2c0a", "#5c3610", "#6a4015", "#5c3610", "#412508"),
-        "teal": ("#134e4a", "#155e5b", "#1e6e6b", "#155e5b", "#0f4643"),
-        "violet": ("#2e1065", "#3b1773", "#451f85", "#3b1773", "#250d57"),
-        "lime": ("#365314", "#3f6212", "#4d7c0f", "#3f6212", "#2f4a10"),
-        "cyan": ("#164e63", "#0e7490", "#0f7a99", "#0e7490", "#114255"),
-        "pink": ("#500724", "#5e0b2b", "#70143a", "#5e0b2b", "#46061f"),
+        "sky": ("#e0f2fe", "#f0f9ff", "#dbeafe", "#bae6fd", "#f8fafc"),
+        "indigo": ("#e0e7ff", "#eef2ff", "#c7d2fe", "#a5b4fc", "#f8fafc"),
+        "emerald": ("#dcfce7", "#ecfdf5", "#bbf7d0", "#86efac", "#f8fafc"),
+        "rose": ("#ffe4e6", "#fff1f2", "#fecdd3", "#fda4af", "#f8fafc"),
+        "amber": ("#fef3c7", "#fffbeb", "#fde68a", "#fcd34d", "#f8fafc"),
+        "teal": ("#ccfbf1", "#f0fdfa", "#99f6e4", "#5eead4", "#f8fafc"),
+        "violet": ("#ede9fe", "#f5f3ff", "#ddd6fe", "#c4b5fd", "#f8fafc"),
+        "lime": ("#ecfccb", "#f7fee7", "#d9f99d", "#bef264", "#f8fafc"),
+        "cyan": ("#cffafe", "#ecfeff", "#a5f3fc", "#67e8f9", "#f8fafc"),
+        "pink": ("#fce7f3", "#fdf2f8", "#fbcfe8", "#f9a8d4", "#f8fafc"),
     }
     bg, card, card_alt, topbar, tab_bg = background_variants.get(
         accent_theme, background_variants["sky"]
@@ -256,14 +256,17 @@ def build_palette(accent_theme: str) -> dict:
         "bg_card_alt": card_alt,
         "accent": accent,
         "accent_soft": accent_soft,
-        "text_primary": "#f8fafc",
-        "text_muted": "#d1d5db",
-        "border": "#1f2937",
-        "bg_dark": "#0b1220",
+        "text_primary": "#0f172a",
+        "text_muted": "#475569",
+        "border": "#cbd5f5",
+        "bg_dark": "#0f172a",
         "tab_bg": tab_bg,
         "tab_active": card,
-        "tab_text": "#e2e8f0",
+        "tab_text": "#334155",
         "topbar": topbar,
+        "dialog_bg": card,
+        "dialog_text": "#0f172a",
+        "dialog_border": "#cbd5f5",
     }
 
 
@@ -440,12 +443,13 @@ class FancyCard(QtWidgets.QFrame):
 
 
 class PasswordDialog(QtWidgets.QDialog):
-    def __init__(self, verifier, parent=None):
+    def __init__(self, verifier, palette: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle("보안 확인")
         self.setModal(True)
         self.setFixedSize(320, 180)
         self._verifier = verifier
+        self._palette = palette
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel("설정에 들어가려면 비밀번호를 입력하세요."))
         self.input = QtWidgets.QLineEdit()
@@ -465,6 +469,9 @@ class PasswordDialog(QtWidgets.QDialog):
         buttons.addWidget(ok)
         layout.addLayout(buttons)
         self.input.setFocus()
+        self.setStyleSheet(
+            f"background: {palette['dialog_bg']}; color: {palette['dialog_text']};"
+        )
 
     def _accept_with_validation(self):
         value = self.input.text().strip()
@@ -480,11 +487,14 @@ class PasswordDialog(QtWidgets.QDialog):
 
 
 class PasswordChangeDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, palette: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle("비밀번호 변경")
         self.setModal(True)
         self.setFixedSize(360, 220)
+        self.setStyleSheet(
+            f"background: {palette['dialog_bg']}; color: {palette['dialog_text']};"
+        )
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel("현재 비밀번호와 새 비밀번호를 입력하세요."))
 
@@ -710,7 +720,7 @@ class MainWindow(QtWidgets.QMainWindow):
             }}
             #CardTitle {{ font-size: 16px; font-weight: 700; }}
             #CardSubtitle {{ color: {palette['text_muted']}; font-size: 13px; font-weight: 600; }}
-            #FormLabel {{ color: {palette['accent_soft']}; font-size: 14px; font-weight: 700; }}
+            #FormLabel {{ color: {palette['accent']}; font-size: 14px; font-weight: 700; }}
             QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
                 background: {palette['bg_card_alt']};
                 border: 1px solid {palette['border']};
@@ -759,13 +769,34 @@ class MainWindow(QtWidgets.QMainWindow):
             }}
             #NoticeTitle {{ font-size: 18px; font-weight: 700; }}
             #NoticeMessage {{ color: {palette['text_muted']}; }}
+            QDialog {{
+                background: {palette['dialog_bg']};
+                color: {palette['dialog_text']};
+            }}
+            QDialog QLabel {{
+                color: {palette['dialog_text']};
+            }}
+            QDialog QLineEdit {{
+                background: {palette['bg_card_alt']};
+                border: 1px solid {palette['dialog_border']};
+                border-radius: 8px;
+                padding: 6px 10px;
+                color: {palette['dialog_text']};
+            }}
+            QDialog QPushButton {{
+                background: {palette['accent']};
+                color: #0b1220;
+                border-radius: 10px;
+                padding: 6px 12px;
+                font-weight: 700;
+            }}
             QTabWidget::pane {{
                 border: 1px solid {palette['border']};
                 border-radius: 12px;
                 background: {palette['bg_card']};
             }}
             QTabWidget::tab-bar {{
-                top: 8px;
+                top: 18px;
             }}
             QTabBar::tab {{
                 background: {palette['tab_bg']};
@@ -786,6 +817,20 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tray_icon.setIcon(self._build_tray_icon())
         for toggle in getattr(self, "_toggles", []):
             toggle.set_palette(self.palette)
+        self._apply_dialog_palette()
+
+    def _apply_dialog_palette(self):
+        palette = self.palette
+        dialog_style = (
+            f"QDialog {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}"
+            f" QDialog QLabel {{ color: {palette['dialog_text']}; }}"
+            f" QDialog QLineEdit {{ background: {palette['bg_card_alt']}; border: 1px solid {palette['dialog_border']};"
+            f" border-radius: 8px; padding: 6px 10px; color: {palette['dialog_text']}; }}"
+            f" QDialog QPushButton {{ background: {palette['accent']}; color: #0b1220; border-radius: 10px;"
+            f" padding: 6px 12px; font-weight: 700; }}"
+        )
+        if self._password_dialog:
+            self._password_dialog.setStyleSheet(dialog_style)
 
     def _build_ui(self):
         self.setWindowTitle("AutoWake")
@@ -1048,7 +1093,7 @@ class MainWindow(QtWidgets.QMainWindow):
             save_config(self.cfg)
 
     def _change_password(self):
-        dialog = PasswordChangeDialog(self)
+        dialog = PasswordChangeDialog(self.palette, self)
         if dialog.exec() != QtWidgets.QDialog.Accepted:
             return
         current = dialog.current_password.text()
@@ -1131,7 +1176,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._password_dialog.activateWindow()
             return
         self._opening_settings = True
-        self._password_dialog = PasswordDialog(self._verify_password, self)
+        self._password_dialog = PasswordDialog(self._verify_password, self.palette, self)
         self._password_dialog.finished.connect(self._clear_password_dialog)
         if self._password_dialog.exec() != QtWidgets.QDialog.Accepted:
             self._opening_settings = False
