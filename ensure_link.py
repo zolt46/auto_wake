@@ -284,19 +284,30 @@ def build_palette(accent_theme: str, accent_color: str = "") -> dict:
     bg, card, card_alt, topbar, tab_bg = background_variants.get(
         accent_theme, background_variants["sky"]
     )
-    bg = _blend_with_white(bg, 0.03)
-    card = _blend_with_white(card, 0.02)
-    card_alt = _blend_with_white(card_alt, 0.02)
-    tab_bg = _blend_with_white(tab_bg, 0.02)
-
-    bg = _blend_with_black(bg, 0.08)
-    card = _blend_with_black(card, 0.06)
-    card_alt = _blend_with_black(card_alt, 0.06)
-    tab_bg = _blend_with_black(tab_bg, 0.1)
     accent_color = _normalize_hex_color(accent_color)
     if accent_color:
         accent = accent_color
         accent_soft = _blend_with_white(accent, 0.45)
+        bg = _blend_with_white(accent, 0.88)
+        card = _blend_with_white(accent, 0.92)
+        card_alt = _blend_with_white(accent, 0.95)
+        topbar = _blend_with_white(accent, 0.84)
+        tab_bg = _blend_with_white(accent, 0.9)
+        bg = _blend_with_black(bg, 0.06)
+        card = _blend_with_black(card, 0.05)
+        card_alt = _blend_with_black(card_alt, 0.03)
+        topbar = _blend_with_black(topbar, 0.08)
+        tab_bg = _blend_with_black(tab_bg, 0.08)
+    else:
+        bg = _blend_with_white(bg, 0.03)
+        card = _blend_with_white(card, 0.02)
+        card_alt = _blend_with_white(card_alt, 0.02)
+        tab_bg = _blend_with_white(tab_bg, 0.02)
+
+        bg = _blend_with_black(bg, 0.08)
+        card = _blend_with_black(card, 0.06)
+        card_alt = _blend_with_black(card_alt, 0.06)
+        tab_bg = _blend_with_black(tab_bg, 0.1)
     accent_dark = _blend_with_black(accent, 0.28)
     tab_active = _blend_with_black(tab_bg, 0.12)
     return {
@@ -446,14 +457,14 @@ class StyledToggle(QtWidgets.QAbstractButton):
 
     def resizeEvent(self, event: QtGui.QResizeEvent):
         super().resizeEvent(event)
-        self._label.setGeometry(0, 0, self.width() - 60, self.height())
+        self._label.setGeometry(60, 0, self.width() - 60, self.height())
 
     def paintEvent(self, event: QtGui.QPaintEvent):
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         toggle_width = 46
         toggle_height = 24
-        x = self.width() - toggle_width
+        x = 0
         y = (self.height() - toggle_height) // 2
         radius = toggle_height / 2
 
@@ -492,14 +503,15 @@ class StepperInput(QtWidgets.QWidget):
         self.spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         self.spin.setAlignment(QtCore.Qt.AlignCenter)
         self.spin.valueChanged.connect(self.valueChanged.emit)
-        self.spin.setFixedWidth(70)
+        self.spin.setFixedWidth(64)
 
         self.minus_button.clicked.connect(lambda: self.spin.stepBy(-1))
         self.plus_button.clicked.connect(lambda: self.spin.stepBy(1))
 
         layout.addWidget(self.minus_button)
-        layout.addWidget(self.spin, 1)
+        layout.addWidget(self.spin)
         layout.addWidget(self.plus_button)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
 
     def setRange(self, minimum: float, maximum: float) -> None:
         self.spin.setRange(minimum, maximum)
@@ -583,9 +595,16 @@ class WarningDialog(QtWidgets.QDialog):
         self.setModal(True)
         self.setFixedSize(300, 140)
         layout = QtWidgets.QVBoxLayout(self)
+        content = QtWidgets.QHBoxLayout()
+        icon_label = QtWidgets.QLabel()
+        icon = self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxWarning)
+        icon_label.setPixmap(icon.pixmap(36, 36))
+        icon_label.setAlignment(QtCore.Qt.AlignTop)
+        content.addWidget(icon_label)
         label = QtWidgets.QLabel(message)
         label.setWordWrap(True)
-        layout.addWidget(label)
+        content.addWidget(label, 1)
+        layout.addLayout(content)
         button_row = QtWidgets.QHBoxLayout()
         button_row.addStretch()
         ok = QtWidgets.QPushButton("확인")
@@ -1102,6 +1121,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 border: none;
                 background: transparent;
             }}
+            QTabBar::scroller {{
+                border: none;
+                background: transparent;
+            }}
             QTabBar::tab {{
                 background: {palette['tab_bg']};
                 color: {palette['text_primary']};
@@ -1345,6 +1368,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.accent_color_button = QtWidgets.QPushButton("테마 색상")
         self.accent_color_button.setObjectName("ThemeColorButton")
         self.accent_color_button.clicked.connect(self._open_accent_color_dialog)
+        self.accent_color_button.setFixedWidth(140)
         self.chrome_relaunch_cooldown = StepperInput()
         self.chrome_relaunch_cooldown.setRange(1.0, 600.0)
         self.chrome_relaunch_cooldown.setSingleStep(1.0)
@@ -1358,12 +1382,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.config_path.setReadOnly(True)
         open_button = QtWidgets.QPushButton("설정 파일 경로 변경")
         open_button.clicked.connect(self._change_work_dir)
+        open_button.setFixedWidth(160)
         path_row.addWidget(self.config_path)
         path_row.addWidget(open_button)
         layout.addLayout(path_row)
 
         self.change_password_button = QtWidgets.QPushButton("비밀번호 변경")
         self.change_password_button.clicked.connect(self._change_password)
+        self.change_password_button.setFixedWidth(140)
         layout.addWidget(self.change_password_button)
 
     def _browse_image(self):
