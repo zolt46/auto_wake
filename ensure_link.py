@@ -221,6 +221,17 @@ def save_config(cfg: AppConfig) -> None:
         log(f"CONFIG save error: {exc}")
 
 
+def _blend_with_white(hex_color: str, ratio: float) -> str:
+    hex_color = hex_color.lstrip("#")
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    r = int(r + (255 - r) * ratio)
+    g = int(g + (255 - g) * ratio)
+    b = int(b + (255 - b) * ratio)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 def build_palette(accent_theme: str) -> dict:
     accents = {
         "sky": ("#0ea5e9", "#38bdf8"),
@@ -250,6 +261,11 @@ def build_palette(accent_theme: str) -> dict:
     bg, card, card_alt, topbar, tab_bg = background_variants.get(
         accent_theme, background_variants["sky"]
     )
+    bg = _blend_with_white(bg, 0.18)
+    card = _blend_with_white(card, 0.12)
+    card_alt = _blend_with_white(card_alt, 0.1)
+    topbar = _blend_with_white(topbar, 0.15)
+    tab_bg = _blend_with_white(tab_bg, 0.12)
     return {
         "bg": bg,
         "bg_card": card,
@@ -470,16 +486,33 @@ class PasswordDialog(QtWidgets.QDialog):
         layout.addLayout(buttons)
         self.input.setFocus()
         self.setStyleSheet(
-            f"background: {palette['dialog_bg']}; color: {palette['dialog_text']};"
+            " ".join(
+                [
+                    f"QDialog {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}",
+                    f"QDialog QLabel {{ color: {palette['dialog_text']}; }}",
+                    f"QDialog QLineEdit {{ background: {palette['bg_card_alt']};"
+                    f" border: 1px solid {palette['dialog_border']};"
+                    " border-radius: 8px; padding: 6px 10px;",
+                    f" color: {palette['dialog_text']}; }}",
+                    f"QDialog QPushButton {{ background: {palette['accent']}; color: #0b1220;",
+                    " border-radius: 10px; padding: 6px 12px; font-weight: 700; }}",
+                ]
+            )
         )
 
     def _accept_with_validation(self):
         value = self.input.text().strip()
         if not value:
             self.message.setText("비밀번호를 입력하세요.")
+            QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호를 입력하세요.")
             return
         if not self._verifier(value):
             self.message.setText("비밀번호가 올바르지 않습니다.")
+            QtWidgets.QMessageBox.warning(
+                self,
+                "비밀번호 오류",
+                "비밀번호가 올바르지 않습니다. 다시 입력해 주세요.",
+            )
             self.input.selectAll()
             self.input.setFocus()
             return
@@ -796,12 +829,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 background: {palette['bg_card']};
             }}
             QTabWidget::tab-bar {{
-                top: 18px;
+                top: 10px;
             }}
             QTabBar::tab {{
                 background: {palette['tab_bg']};
                 color: {palette['tab_text']};
-                padding: 8px 16px;
+                padding: 6px 14px;
                 margin-right: 6px;
                 border-top-left-radius: 10px;
                 border-top-right-radius: 10px;
@@ -1165,13 +1198,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_stop.setEnabled(self.is_running)
 
     def _request_settings_open(self):
+        if self._opening_settings and not (
+            self._password_dialog and self._password_dialog.isVisible()
+        ):
+            self._opening_settings = False
         if self._opening_settings:
             return
         if self.isVisible():
             self.raise_()
             self.activateWindow()
             return
-        if self._password_dialog and self._password_dialog.isVisible():
+        if self._password_dialog:
+            self._password_dialog.showNormal()
             self._password_dialog.raise_()
             self._password_dialog.activateWindow()
             return
