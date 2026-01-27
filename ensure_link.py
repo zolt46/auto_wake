@@ -531,7 +531,7 @@ class PasswordDialog(QtWidgets.QDialog):
         value = self.input.text().strip()
         if not value:
             self.message.setText("\n비밀번호를 입력하세요.")
-            QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "\n비밀번호를 입력하세요.")
+            QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호를 입력하세요.")
             self.show()
             self.raise_()
             self.activateWindow()
@@ -541,7 +541,7 @@ class PasswordDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(
                 self,
                 "비밀번호 오류",
-                "\n비밀번호가 올바르지 않습니다. 다시 입력해 주세요.",
+                "비밀번호가 올바르지 않습니다. 다시 입력해 주세요.",
             )
             self.input.clear()
             self.input.selectAll()
@@ -835,7 +835,7 @@ class MainWindow(QtWidgets.QMainWindow):
             }}
             QPushButton#StartButton:disabled {{
                 background: {palette['bg_dark']};
-                color: #f8fafc;
+                color: #0b1220;
             }}
             QPushButton#StopButton {{
                 background: #f97316;
@@ -843,7 +843,7 @@ class MainWindow(QtWidgets.QMainWindow):
             }}
             QPushButton#StopButton:disabled {{
                 background: {palette['bg_dark']};
-                color: #f8fafc;
+                color: #0b1220;
             }}
             #NoticeFrame {{
                 background: {palette['bg_card']};
@@ -888,24 +888,25 @@ class MainWindow(QtWidgets.QMainWindow):
                 font-weight: 700;
             }}
             QTabWidget::pane {{
-                border: none;
+                border: 1px solid {palette['border']};
+                border-top: none;
                 border-radius: 12px;
                 background: {palette['bg_card']};
                 margin-top: 6px;
             }}
             QTabWidget::tab-bar {{
                 top: 14px;
-                left: 24px;
+                left: 32px;
             }}
             QTabBar::tab {{
                 background: {palette['tab_bg']};
                 color: {palette['text_primary']};
-                padding: 5px 12px;
+                padding: 6px 14px;
                 margin-right: 6px;
                 border-top-left-radius: 10px;
                 border-top-right-radius: 10px;
-                font-size: 14px;
-                font-weight: 700;
+                font-size: 15px;
+                font-weight: 800;
             }}
             QTabBar::tab:selected {{
                 background: {palette['tab_active']};
