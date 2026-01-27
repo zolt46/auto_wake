@@ -497,7 +497,6 @@ class PasswordDialog(QtWidgets.QDialog):
         buttons = QtWidgets.QHBoxLayout()
         cancel = QtWidgets.QPushButton("취소")
         ok = QtWidgets.QPushButton("확인")
-        ok.setDefault(False)
         ok.setAutoDefault(False)
         cancel.setAutoDefault(False)
         cancel.clicked.connect(self.reject)
@@ -527,22 +526,32 @@ class PasswordDialog(QtWidgets.QDialog):
             )
         )
 
+    def _show_warning(self, message: str) -> None:
+        warning = QtWidgets.QMessageBox(self)
+        warning.setIcon(QtWidgets.QMessageBox.Warning)
+        warning.setWindowTitle("비밀번호 오류")
+        warning.setText(message)
+        warning.setStandardButtons(QtWidgets.QMessageBox.Ok)
+        warning.setWindowModality(QtCore.Qt.WindowModal)
+        warning.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+        warning.finished.connect(self._restore_focus)
+        warning.show()
+
+    def _restore_focus(self) -> None:
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.input.setFocus()
+
     def _accept_with_validation(self):
         value = self.input.text().strip()
         if not value:
             self.message.setText("\n비밀번호를 입력하세요.")
-            QtWidgets.QMessageBox.warning(self, "비밀번호 오류", "비밀번호를 입력하세요.")
-            self.show()
-            self.raise_()
-            self.activateWindow()
+            self._show_warning("\n비밀번호를 입력하세요.")
             return
         if not self._verifier(value):
             self.message.setText("\n비밀번호가 올바르지 않습니다. 다시 입력해 주세요.")
-            QtWidgets.QMessageBox.warning(
-                self,
-                "비밀번호 오류",
-                "비밀번호가 올바르지 않습니다. 다시 입력해 주세요.",
-            )
+            self._show_warning("\n비밀번호가 올바르지 않습니다. 다시 입력해 주세요.")
             self.input.clear()
             self.input.selectAll()
             self.input.setFocus()
@@ -1269,6 +1278,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_start.setEnabled(not self.is_running)
         self.action_stop.setEnabled(self.is_running)
 
+    def _bring_window_to_front(self) -> None:
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
     def _bring_dialog_to_front(self, dialog: QtWidgets.QDialog) -> None:
         dialog.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
         dialog.show()
@@ -1291,12 +1305,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self._opening_settings = False
         if self._opening_settings:
             return
-        if self.isVisible():
-            self.raise_()
-            self.activateWindow()
-            return
         if self._password_dialog:
             self._bring_dialog_to_front(self._password_dialog)
+            return
+        if self.isVisible() or self.isMinimized():
+            self._bring_window_to_front()
             return
         self._opening_settings = True
         self._password_dialog = PasswordDialog(self._verify_password, self.palette, self)

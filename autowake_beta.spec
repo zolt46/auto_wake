@@ -7,7 +7,7 @@ block_cipher = None
 
 spec_path = globals().get("specpath") or os.getcwd()
 project_root = os.path.abspath(spec_path)
-entry_script = os.path.join(project_root, "ensure_link.py")
+entry_script = os.path.join(project_root, "autowake_git", "ensure_link.py")
 
 
 analysis = Analysis(
