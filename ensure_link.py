@@ -5,6 +5,7 @@ from dataclasses import dataclass, asdict
 import hashlib
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -89,6 +90,7 @@ def seconds_since_last_input() -> float:
 @dataclass
 class AppConfig:
     url: str = DEFAULT_URL
+    urls: list[str] = None
     image_path: str = DEFAULT_LOCAL_IMAGE
     work_dir: str = WORK_DIR
     idle_to_show_sec: float = 10.0
@@ -102,6 +104,7 @@ class AppConfig:
     ui_theme: str = "accent"
     saver_image_mode: str = "bundled"
     audio_url: str = DEFAULT_AUDIO_URL
+    audio_urls: list[str] = None
     audio_enabled: bool = True
     audio_window_mode: str = "minimized"
     audio_start_delay_sec: float = 2.0
@@ -119,6 +122,12 @@ class AppConfig:
     accent_theme: str = "sky"
     accent_color: str = ""
 
+    def __post_init__(self):
+        if self.urls is None:
+            self.urls = [self.url]
+        if self.audio_urls is None:
+            self.audio_urls = [self.audio_url]
+
     @classmethod
     def from_dict(cls, data: dict) -> "AppConfig":
         chrome_fullscreen = bool(data.get("chrome_fullscreen", True))
@@ -129,6 +138,7 @@ class AppConfig:
 
         return cls(
             url=data.get("url", DEFAULT_URL),
+            urls=list(data.get("urls", [])) or [data.get("url", DEFAULT_URL)],
             image_path=data.get("image_path", DEFAULT_LOCAL_IMAGE),
             work_dir=data.get("work_dir", WORK_DIR),
             idle_to_show_sec=float(data.get("idle_to_show_sec", 10.0)),
@@ -144,6 +154,9 @@ class AppConfig:
             ui_theme="accent",
             saver_image_mode=str(data.get("saver_image_mode", "bundled")),
             audio_url=data.get("audio_url", DEFAULT_AUDIO_URL),
+            audio_urls=list(data.get("audio_urls", [])) or [
+                data.get("audio_url", DEFAULT_AUDIO_URL)
+            ],
             audio_enabled=bool(data.get("audio_enabled", True)),
             audio_window_mode=data.get("audio_window_mode", "minimized"),
             audio_start_delay_sec=float(data.get("audio_start_delay_sec", 2.0)),
@@ -352,7 +365,7 @@ def find_chrome_exe() -> str:
     return "chrome"
 
 
-def build_chrome_args(url: str, profile_dir: str, mode: str, autoplay: bool) -> list[str]:
+def build_chrome_args(urls: list[str], profile_dir: str, mode: str, autoplay: bool) -> list[str]:
     chrome = find_chrome_exe()
     args = [
         chrome,
@@ -370,7 +383,7 @@ def build_chrome_args(url: str, profile_dir: str, mode: str, autoplay: bool) -> 
         args.append("--start-fullscreen")
     elif mode == "kiosk":
         args.append("--kiosk")
-    args.append(url)
+    args.extend(urls)
     return args
 
 
@@ -383,8 +396,8 @@ def ensure_youtube_autoplay(url: str) -> str:
     return f"{url}{connector}autoplay=1&mute=0&playsinline=1"
 
 
-def launch_chrome(url: str, profile_dir: str, mode: str, autoplay: bool) -> Optional[subprocess.Popen]:
-    args = build_chrome_args(url, profile_dir, mode, autoplay)
+def launch_chrome(urls: list[str], profile_dir: str, mode: str, autoplay: bool) -> Optional[subprocess.Popen]:
+    args = build_chrome_args(urls, profile_dir, mode, autoplay)
     try:
         log(f"Launching chrome: {args}")
         return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -420,17 +433,15 @@ def keep_window_on_top(pid: int) -> None:
 def build_notice_message() -> str:
     return (
         "한국기술교육대학교 참고자료실 도서 검색 전용 PC입니다.\n\n"
-        "현재 사용자님을 위하여 대학 도서관 페이지의 통합검색 화면을 기본 창으로 제공하고 있습니다. "
-        "본 PC는 학습·연구 목적의 정보 탐색을 돕기 위해 운영되며, 규정과 보편적 절차를 준수하는 "
-        "올바른 사용을 권장드립니다. 부적절한 사용이 적발될 경우 관련 규정에 따라 안내 및 조치가 "
-        "이루어질 수 있습니다.\n\n"
-        "사용자님께 도움이 되었으면 좋겠습니다. 방문해 주셔서 진심으로 감사합니다.\n\n"
-        "[전체화면/키오스크 종료 방법] \n"
-        "- F11 키로 전체화면을 해제할 수 있습니다.\n"
-        "- ESC 키를 길게 누르면 일부 전체화면이 해제될 수 있습니다.\n"
-        "- Alt + F4 키로 크롬을 종료할 수 있습니다.\n\n"
-        "크롬이 종료되면 몇 초 후 자동으로 다시 실행됩니다. "
-        "계속 이용을 원하시면 크롬 창을 종료하지 않고 사용해 주세요.\n"
+        "본 PC는 학습·연구 목적의 정보 탐색을 위해 운영됩니다.\n"
+        "올바른 사용을 권장드리며, 규정을 위반하는 경우 안내 및 조치가 이루어질 수 있습니다.\n\n"
+        "이용해 주셔서 감사합니다.\n\n"
+        "[전체화면/키오스크 종료 안내]\n"
+        "• F11: 전체화면 해제\n"
+        "• ESC: 일부 전체화면 해제\n"
+        "• Alt + F4: 크롬 종료\n\n"
+        "크롬이 종료되면 몇 초 후 자동으로 다시 실행됩니다.\n"
+        "계속 이용하려면 크롬 창을 종료하지 않고 사용해 주세요.\n"
     )
 
 
@@ -601,6 +612,79 @@ class FancyCard(QtWidgets.QFrame):
         layout.addWidget(subtitle_label)
         self.body_layout = QtWidgets.QVBoxLayout()
         layout.addLayout(self.body_layout)
+
+
+class UrlListDialog(QtWidgets.QDialog):
+    def __init__(self, title: str, urls: list[str], palette: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.setFixedSize(460, 360)
+        self._palette = palette
+        self._urls = urls
+
+        layout = QtWidgets.QVBoxLayout(self)
+        self.list_widget = QtWidgets.QListWidget()
+        self.list_widget.addItems(urls)
+        layout.addWidget(self.list_widget)
+
+        input_row = QtWidgets.QHBoxLayout()
+        self.url_input = QtWidgets.QLineEdit()
+        self.url_input.setPlaceholderText("https://example.com")
+        add_button = QtWidgets.QPushButton("추가")
+        remove_button = QtWidgets.QPushButton("삭제")
+        add_button.clicked.connect(self._add_url)
+        remove_button.clicked.connect(self._remove_selected)
+        input_row.addWidget(self.url_input)
+        input_row.addWidget(add_button)
+        input_row.addWidget(remove_button)
+        layout.addLayout(input_row)
+
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addStretch()
+        ok = QtWidgets.QPushButton("확인")
+        cancel = QtWidgets.QPushButton("취소")
+        ok.clicked.connect(self.accept)
+        cancel.clicked.connect(self.reject)
+        button_row.addWidget(cancel)
+        button_row.addWidget(ok)
+        layout.addLayout(button_row)
+
+        self.setStyleSheet(
+            " ".join(
+                [
+                    f"QDialog {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}",
+                    f"QDialog QLabel {{ color: {palette['dialog_text']}; }}",
+                    f"QDialog QLineEdit {{ background: {palette['bg_card']};"
+                    f" border: 1px solid {palette['dialog_border']};"
+                    " border-radius: 8px; padding: 6px 10px;",
+                    f" color: {palette['dialog_text']}; }}",
+                    f"QDialog QPushButton {{ background: {palette['accent']}; color: #0b1220;",
+                    " border-radius: 10px; padding: 6px 12px; font-weight: 700; }}",
+                    f"QListWidget {{ background: {palette['bg_card']};"
+                    f" border: 1px solid {palette['dialog_border']};"
+                    f" color: {palette['dialog_text']}; }}",
+                ]
+            )
+        )
+
+    def _add_url(self):
+        text = self.url_input.text().strip()
+        if not text:
+            return
+        self.list_widget.addItem(text)
+        self.url_input.clear()
+
+    def _remove_selected(self):
+        for item in self.list_widget.selectedItems():
+            self.list_widget.takeItem(self.list_widget.row(item))
+
+    def urls(self) -> list[str]:
+        return [
+            self.list_widget.item(index).text().strip()
+            for index in range(self.list_widget.count())
+            if self.list_widget.item(index).text().strip()
+        ]
 
 
 class WarningDialog(QtWidgets.QDialog):
@@ -798,13 +882,11 @@ class PasswordChangeDialog(QtWidgets.QDialog):
         layout.addLayout(buttons)
 
 class NoticeWindow(QtWidgets.QWidget):
+    closed = QtCore.Signal()
+
     def __init__(self, palette: dict, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(
-            QtCore.Qt.WindowStaysOnTopHint
-            | QtCore.Qt.FramelessWindowHint
-            | QtCore.Qt.Tool
-        )
+        self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.WindowTitleHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setWindowTitle("AutoWake 안내")
         self.palette = palette
@@ -833,14 +915,25 @@ class NoticeWindow(QtWidgets.QWidget):
         frame = QtWidgets.QFrame()
         frame.setObjectName("NoticeFrame")
         frame_layout = QtWidgets.QVBoxLayout(frame)
+        header_row = QtWidgets.QHBoxLayout()
         title = QtWidgets.QLabel("이용 안내")
         title.setObjectName("NoticeTitle")
+        close_button = QtWidgets.QPushButton("닫기")
+        close_button.clicked.connect(self.close)
+        close_button.setFixedWidth(80)
+        header_row.addWidget(title)
+        header_row.addStretch()
+        header_row.addWidget(close_button)
         message = QtWidgets.QLabel(build_notice_message())
         message.setWordWrap(True)
         message.setObjectName("NoticeMessage")
-        frame_layout.addWidget(title)
+        frame_layout.addLayout(header_row)
         frame_layout.addWidget(message)
         layout.addWidget(frame)
+
+    def closeEvent(self, event: QtGui.QCloseEvent):
+        self.closed.emit()
+        super().closeEvent(event)
 
     def show_centered(self):
         screen = QtGui.QGuiApplication.primaryScreen()
@@ -1318,6 +1411,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         form = QtWidgets.QFormLayout()
         self.audio_url = QtWidgets.QLineEdit()
+        self.audio_url.setReadOnly(True)
+        self.audio_url_edit = QtWidgets.QPushButton("수정")
+        self.audio_url_edit.clicked.connect(self._edit_audio_urls)
+        audio_url_row = QtWidgets.QHBoxLayout()
+        audio_url_row.addWidget(self.audio_url)
+        audio_url_row.addWidget(self.audio_url_edit)
         self.audio_mode = ModeSelector(
             ["minimized", "normal", "fullscreen", "kiosk"],
             labels={"minimized": "최소화", "normal": "일반 창", "fullscreen": "전체화면", "kiosk": "키오스크"},
@@ -1330,7 +1429,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audio_relaunch_cooldown.setRange(1.0, 600.0)
         self.audio_relaunch_cooldown.setSingleStep(1.0)
         self.audio_relaunch_cooldown.setDecimals(2)
-        form.addRow(self._label("음원 URL"), self.audio_url)
+        form.addRow(self._label("음원 URL"), audio_url_row)
         form.addRow(self._label("시작 창 모드"), self.audio_mode)
         form.addRow(self._label("시작 지연(초)"), self.audio_start_delay)
         form.addRow(self._label("재실행 쿨다운(초)"), self.audio_relaunch_cooldown)
@@ -1341,6 +1440,36 @@ class MainWindow(QtWidgets.QMainWindow):
         label = QtWidgets.QLabel(text)
         label.setObjectName("FormLabel")
         return label
+
+    def _format_url_summary(self, urls: list[str], fallback: str) -> str:
+        cleaned = [item for item in (urls or []) if item]
+        if not cleaned:
+            return fallback
+        if len(cleaned) == 1:
+            return cleaned[0]
+        return f"{cleaned[0]} 외 {len(cleaned) - 1}개"
+
+    def _update_audio_url_display(self):
+        self.audio_url.setText(self._format_url_summary(self.audio_urls, DEFAULT_AUDIO_URL))
+
+    def _update_target_url_display(self):
+        self.target_url.setText(self._format_url_summary(self.target_urls, DEFAULT_URL))
+
+    def _edit_audio_urls(self):
+        dialog = UrlListDialog("음원 URL 편집", list(self.audio_urls), self.palette, self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            urls = dialog.urls()
+            self.audio_urls = urls or [DEFAULT_AUDIO_URL]
+            self._update_audio_url_display()
+            self._autosave()
+
+    def _edit_target_urls(self):
+        dialog = UrlListDialog("URL 목록 편집", list(self.target_urls), self.palette, self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            urls = dialog.urls()
+            self.target_urls = urls or [DEFAULT_URL]
+            self._update_target_url_display()
+            self._autosave()
 
     def _register_toggle(self, toggle: StyledToggle) -> None:
         if not hasattr(self, "_toggles"):
@@ -1355,6 +1484,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         form = QtWidgets.QFormLayout()
         self.target_url = QtWidgets.QLineEdit()
+        self.target_url.setReadOnly(True)
+        self.target_url_edit = QtWidgets.QPushButton("수정")
+        self.target_url_edit.clicked.connect(self._edit_target_urls)
+        target_url_row = QtWidgets.QHBoxLayout()
+        target_url_row.addWidget(self.target_url)
+        target_url_row.addWidget(self.target_url_edit)
         self.target_mode = ModeSelector(
             ["normal", "fullscreen", "kiosk", "minimized"],
             labels={"minimized": "최소화", "normal": "일반 창", "fullscreen": "전체화면", "kiosk": "키오스크"},
@@ -1371,7 +1506,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.target_refocus_interval.setRange(1.0, 60.0)
         self.target_refocus_interval.setSingleStep(1.0)
         self.target_refocus_interval.setDecimals(2)
-        form.addRow(self._label("URL"), self.target_url)
+        form.addRow(self._label("URL"), target_url_row)
         form.addRow(self._label("시작 창 모드"), self.target_mode)
         form.addRow(self._label("시작 지연(초)"), self.target_start_delay)
         form.addRow(self._label("재실행 쿨다운(초)"), self.target_relaunch_cooldown)
@@ -1676,13 +1811,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._loading = True
         cfg = self.cfg
         self.audio_enabled.setChecked(cfg.audio_enabled)
-        self.audio_url.setText(cfg.audio_url)
+        self.audio_urls = list(cfg.audio_urls or [cfg.audio_url])
+        self._update_audio_url_display()
         self.audio_mode.setCurrentText(cfg.audio_window_mode)
         self.audio_start_delay.setValue(cfg.audio_start_delay_sec)
         self.audio_relaunch_cooldown.setValue(cfg.audio_relaunch_cooldown_sec)
 
         self.target_enabled.setChecked(cfg.target_enabled)
-        self.target_url.setText(cfg.url)
+        self.target_urls = list(cfg.urls or [cfg.url])
+        self._update_target_url_display()
         self.target_mode.setCurrentText(cfg.target_window_mode)
         self.target_start_delay.setValue(cfg.target_start_delay_sec)
         self.target_relaunch_cooldown.setValue(cfg.target_relaunch_cooldown_sec)
@@ -1706,8 +1843,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _gather_config(self) -> AppConfig:
         target_mode = self.target_mode.currentText()
+        target_urls = list(self.target_urls or [])
+        audio_urls = list(self.audio_urls or [])
+        primary_target = target_urls[0] if target_urls else DEFAULT_URL
+        primary_audio = audio_urls[0] if audio_urls else DEFAULT_AUDIO_URL
         cfg = AppConfig(
-            url=self.target_url.text(),
+            url=primary_target,
+            urls=target_urls or [primary_target],
             image_path=self.saver_image_path.text(),
             work_dir=self.cfg.work_dir,
             idle_to_show_sec=self.saver_idle_delay.value(),
@@ -1720,7 +1862,8 @@ class MainWindow(QtWidgets.QMainWindow):
             chrome_repeat=self.cfg.chrome_repeat,
             ui_theme="accent",
             saver_image_mode=self.saver_mode.currentText(),
-            audio_url=self.audio_url.text(),
+            audio_url=primary_audio,
+            audio_urls=audio_urls or [primary_audio],
             audio_enabled=self.audio_enabled.isChecked(),
             audio_window_mode=self.audio_mode.currentText(),
             audio_start_delay_sec=self.audio_start_delay.value(),
@@ -1755,9 +1898,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for widget in widgets:
             widget.toggled.connect(self._autosave)
         for widget in [
-            self.audio_url,
             self.saver_image_path,
-            self.target_url,
         ]:
             widget.textEdited.connect(self._autosave)
         for widget in [
@@ -1828,7 +1969,7 @@ class AudioWorker:
         while True:
             self.cfg = load_config()
             config_signature = (
-                self.cfg.audio_url,
+                tuple(self.cfg.audio_urls or [self.cfg.audio_url]),
                 self.cfg.audio_window_mode,
                 self.cfg.audio_start_delay_sec,
                 self.cfg.audio_relaunch_cooldown_sec,
@@ -1855,10 +1996,11 @@ class AudioWorker:
             if self.pending_launch_at is not None:
                 now = time.time()
                 if now >= self.pending_launch_at:
-                    url = ensure_youtube_autoplay(self.cfg.audio_url)
+                    candidates = self.cfg.audio_urls or [self.cfg.audio_url]
+                    url = ensure_youtube_autoplay(random.choice(candidates))
                     profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "audio")
                     os.makedirs(profile, exist_ok=True)
-                    self.proc = launch_chrome(url, profile, self.cfg.audio_window_mode, True)
+                    self.proc = launch_chrome([url], profile, self.cfg.audio_window_mode, True)
                     self.last_launch = time.time()
                     self.pending_launch_at = None
             time.sleep(max(self.cfg.poll_sec, 0.2))
@@ -1881,14 +2023,20 @@ class TargetWorker(QtCore.QObject):
         self.palette_key = (self.cfg.accent_theme, self.cfg.accent_color)
         self.palette = build_palette(self.cfg.accent_theme, self.cfg.accent_color)
         self.notice = NoticeWindow(self.palette)
+        self.notice.closed.connect(self._dismiss_notice)
+        self.notice_dismissed = False
+        self.last_notice_enabled = self.cfg.notice_enabled
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self._tick)
         self.timer.start(int(max(self.cfg.poll_sec, 0.2) * 1000))
 
+    def _dismiss_notice(self):
+        self.notice_dismissed = True
+
     def _tick(self):
         self.cfg = load_config()
         config_signature = (
-            self.cfg.url,
+            tuple(self.cfg.urls or [self.cfg.url]),
             self.cfg.target_window_mode,
             self.cfg.target_start_delay_sec,
             self.cfg.target_relaunch_cooldown_sec,
@@ -1924,7 +2072,11 @@ class TargetWorker(QtCore.QObject):
                 }}
                 """
             )
-        if self.cfg.notice_enabled and self.cfg.target_enabled:
+        if self.cfg.notice_enabled and not self.last_notice_enabled:
+            self.notice_dismissed = False
+        self.last_notice_enabled = self.cfg.notice_enabled
+
+        if self.cfg.notice_enabled and self.cfg.target_enabled and not self.notice_dismissed:
             if not self.notice.isVisible():
                 self.notice.show_centered()
         else:
@@ -1946,8 +2098,9 @@ class TargetWorker(QtCore.QObject):
             if now >= self.pending_launch_at:
                 profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "target")
                 os.makedirs(profile, exist_ok=True)
+                urls = self.cfg.urls or [self.cfg.url]
                 self.proc = launch_chrome(
-                    self.cfg.url,
+                    urls,
                     profile,
                     self.cfg.target_window_mode,
                     False,
