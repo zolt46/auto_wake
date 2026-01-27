@@ -482,6 +482,7 @@ class PasswordDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("보안 확인")
         self.setModal(True)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
         self.setFixedSize(320, 180)
         self._verifier = verifier
         self._palette = palette
@@ -496,6 +497,9 @@ class PasswordDialog(QtWidgets.QDialog):
         buttons = QtWidgets.QHBoxLayout()
         cancel = QtWidgets.QPushButton("취소")
         ok = QtWidgets.QPushButton("확인")
+        ok.setDefault(False)
+        ok.setAutoDefault(False)
+        cancel.setAutoDefault(False)
         cancel.clicked.connect(self.reject)
         ok.clicked.connect(self._accept_with_validation)
         self.input.returnPressed.connect(self._accept_with_validation)
