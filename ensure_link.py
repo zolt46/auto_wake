@@ -1609,19 +1609,20 @@ class MainWindow(QtWidgets.QMainWindow):
             self._bring_window_to_front()
         self._opening_settings = True
         self._password_dialog = PasswordDialog(self._verify_password, self.palette, self)
+        self._password_dialog.accepted.connect(self._show_main_after_password)
         self._password_dialog.finished.connect(self._clear_password_dialog)
+        self._password_dialog.open()
         self._bring_dialog_to_front(self._password_dialog)
-        if self._password_dialog.exec() != QtWidgets.QDialog.Accepted:
-            self._opening_settings = False
-            return
+
+    def _verify_password(self, value: str) -> bool:
+        return verify_password(value, self.cfg.password_hash, self.cfg.password_salt)
+
+    def _show_main_after_password(self):
         self.showNormal()
         self.resize(self.minimumSize())
         self.raise_()
         self.activateWindow()
         self._opening_settings = False
-
-    def _verify_password(self, value: str) -> bool:
-        return verify_password(value, self.cfg.password_hash, self.cfg.password_salt)
 
     def _clear_password_dialog(self):
         self._password_dialog = None
