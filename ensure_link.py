@@ -288,16 +288,12 @@ def build_palette(accent_theme: str, accent_color: str = "") -> dict:
     if accent_color:
         accent = accent_color
         accent_soft = _blend_with_white(accent, 0.35)
-        bg = _blend_with_white(accent, 0.82)
-        card = _blend_with_white(accent, 0.88)
-        card_alt = _blend_with_white(accent, 0.93)
-        topbar = _blend_with_white(accent, 0.74)
-        tab_bg = _blend_with_white(accent, 0.84)
-        bg = _blend_with_black(bg, 0.18)
-        card = _blend_with_black(card, 0.12)
-        card_alt = _blend_with_black(card_alt, 0.06)
-        topbar = _blend_with_black(topbar, 0.2)
-        tab_bg = _blend_with_black(tab_bg, 0.16)
+        base_bg = _blend_with_white(accent, 0.9)
+        bg = _blend_with_black(base_bg, 0.08)
+        card = _blend_with_black(_blend_with_white(accent, 0.92), 0.05)
+        card_alt = _blend_with_black(_blend_with_white(accent, 0.95), 0.04)
+        topbar = _blend_with_black(_blend_with_white(accent, 0.86), 0.12)
+        tab_bg = _blend_with_black(_blend_with_white(accent, 0.88), 0.1)
     else:
         bg = _blend_with_white(bg, 0.03)
         card = _blend_with_white(card, 0.02)
@@ -309,8 +305,8 @@ def build_palette(accent_theme: str, accent_color: str = "") -> dict:
         card_alt = _blend_with_black(card_alt, 0.06)
         tab_bg = _blend_with_black(tab_bg, 0.1)
     accent_dark = _blend_with_black(accent, 0.32)
-    tab_active = _blend_with_black(tab_bg, 0.2)
-    border = _blend_with_black(tab_bg, 0.2)
+    tab_active = _blend_with_black(tab_bg, 0.24)
+    border = _blend_with_black(tab_bg, 0.18)
     return {
         "bg": bg,
         "bg_card": card,
@@ -1135,10 +1131,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 border: none;
                 border-radius: 12px;
                 background: {palette['bg_card']};
-                margin-top: 8px;
+                margin-top: 14px;
             }}
             QTabWidget::tab-bar {{
-                top: 6px;
+                top: 10px;
                 left: 32px;
             }}
             QTabWidget::tab-bar, QTabBar::tab-bar {{
@@ -1607,12 +1603,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self._opening_settings = False
         if self._opening_settings:
             return
-        if self._password_dialog:
-            self._bring_dialog_to_front(self._password_dialog)
         if self.isVisible() or self.isMinimized():
             self._bring_window_to_front()
             if self._password_dialog:
                 self._bring_dialog_to_front(self._password_dialog)
+            return
+        if self._password_dialog:
+            self._bring_dialog_to_front(self._password_dialog)
             return
         self._opening_settings = True
         self._password_dialog = PasswordDialog(self._verify_password, self.palette, self)
