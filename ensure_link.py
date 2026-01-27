@@ -489,6 +489,7 @@ class StepperInput(QtWidgets.QWidget):
         self.spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         self.spin.setAlignment(QtCore.Qt.AlignCenter)
         self.spin.valueChanged.connect(self.valueChanged.emit)
+        self.spin.setFixedWidth(90)
 
         self.minus_button.clicked.connect(lambda: self.spin.stepBy(-1))
         self.plus_button.clicked.connect(lambda: self.spin.stepBy(1))
@@ -601,6 +602,7 @@ class PasswordDialog(QtWidgets.QDialog):
         buttons.addWidget(cancel)
         buttons.addWidget(ok)
         layout.addLayout(buttons)
+        self._action_buttons = [cancel, ok]
         self.input.setFocus()
         self.setStyleSheet(
             " ".join(
@@ -622,6 +624,9 @@ class PasswordDialog(QtWidgets.QDialog):
         )
 
     def _show_warning(self, message: str) -> None:
+        self.input.setEnabled(False)
+        for button in self._action_buttons:
+            button.setEnabled(False)
         warning = QtWidgets.QMessageBox(self)
         warning.setIcon(QtWidgets.QMessageBox.Warning)
         warning.setWindowTitle("비밀번호 오류")
@@ -637,8 +642,12 @@ class PasswordDialog(QtWidgets.QDialog):
         warning.show()
         warning.raise_()
         warning.activateWindow()
+        warning.setFocus()
 
     def _restore_focus(self) -> None:
+        self.input.setEnabled(True)
+        for button in self._action_buttons:
+            button.setEnabled(True)
         self.show()
         self.raise_()
         self.activateWindow()
@@ -958,8 +967,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: {palette['text_primary']};
                 border: 1px solid {palette['border']};
                 border-radius: 10px;
-                min-width: 36px;
-                min-height: 34px;
+                min-width: 22px;
+                min-height: 22px;
                 font-size: 14px;
                 font-weight: 700;
             }}
@@ -1038,6 +1047,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 top: 14px;
                 left: 32px;
             }}
+            QTabWidget::tab-bar, QTabBar::tab-bar {{
+                border: none;
+                background: transparent;
+            }}
             QTabBar::tab {{
                 background: {palette['tab_bg']};
                 color: {palette['text_primary']};
@@ -1045,6 +1058,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 margin-right: 6px;
                 border-top-left-radius: 10px;
                 border-top-right-radius: 10px;
+                border: none;
                 font-size: 13px;
                 font-weight: 600;
             }}
