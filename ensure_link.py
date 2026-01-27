@@ -411,7 +411,6 @@ class StyledToggle(QtWidgets.QAbstractButton):
         self._label.setGeometry(0, 0, self.width() - 60, self.height())
 
     def paintEvent(self, event: QtGui.QPaintEvent):
-        super().paintEvent(event)
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         toggle_width = 46
