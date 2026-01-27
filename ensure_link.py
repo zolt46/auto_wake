@@ -99,7 +99,7 @@ class AppConfig:
     chrome_kiosk: bool = False
     saver_enabled: bool = True
     chrome_repeat: bool = True
-    ui_theme: str = "dark"
+    ui_theme: str = "accent"
     saver_image_mode: str = "bundled"
     audio_url: str = DEFAULT_AUDIO_URL
     audio_enabled: bool = True
@@ -140,7 +140,7 @@ class AppConfig:
             chrome_kiosk=chrome_kiosk,
             saver_enabled=bool(data.get("saver_enabled", True)),
             chrome_repeat=bool(data.get("chrome_repeat", True)),
-            ui_theme="dark",
+            ui_theme="accent",
             saver_image_mode=str(data.get("saver_image_mode", "bundled")),
             audio_url=data.get("audio_url", DEFAULT_AUDIO_URL),
             audio_enabled=bool(data.get("audio_enabled", True)),
@@ -221,7 +221,7 @@ def save_config(cfg: AppConfig) -> None:
         log(f"CONFIG save error: {exc}")
 
 
-def build_palette(theme: str, accent_theme: str) -> dict:
+def build_palette(accent_theme: str) -> dict:
     accents = {
         "sky": ("#0ea5e9", "#38bdf8"),
         "indigo": ("#6366f1", "#818cf8"),
@@ -235,51 +235,35 @@ def build_palette(theme: str, accent_theme: str) -> dict:
         "pink": ("#ec4899", "#f472b6"),
     }
     accent, accent_soft = accents.get(accent_theme, accents["sky"])
-    if theme == "dark":
-        background_variants = {
-            "sky": ("#101a2b", "#1c2a3f", "#233248", "#1c2a3f", "#182233"),
-            "indigo": ("#14172b", "#202549", "#2a2f57", "#202549", "#1a1f3f"),
-            "emerald": ("#0f1f1a", "#183028", "#1f3a30", "#183028", "#14261f"),
-            "rose": ("#2a1419", "#3b1f25", "#45262d", "#3b1f25", "#2f1a1f"),
-            "amber": ("#2a1c10", "#3b2a1b", "#453122", "#3b2a1b", "#2f2116"),
-            "teal": ("#102421", "#18332f", "#1f3d38", "#18332f", "#152b27"),
-            "violet": ("#1d142b", "#2a1f3b", "#332645", "#2a1f3b", "#221a2f"),
-            "lime": ("#1b2411", "#2a3420", "#324026", "#2a3420", "#212b17"),
-            "cyan": ("#0f2428", "#19323a", "#203d45", "#19323a", "#162b32"),
-            "pink": ("#2a1423", "#3a1f30", "#44263a", "#3a1f30", "#2f1a27"),
-        }
-        bg, card, card_alt, topbar, tab_bg = background_variants.get(
-            accent_theme, background_variants["sky"]
-        )
-        return {
-            "bg": bg,
-            "bg_card": card,
-            "bg_card_alt": card_alt,
-            "accent": accent,
-            "accent_soft": accent_soft,
-            "text_primary": "#f9fafb",
-            "text_muted": "#d1d5db",
-            "border": "#334155",
-            "bg_dark": "#0b1220",
-            "tab_bg": tab_bg,
-            "tab_active": card,
-            "tab_text": "#e5e7eb",
-            "topbar": topbar,
-        }
+    background_variants = {
+        "sky": ("#0f172a", "#111f34", "#1f2a44", "#111f34", "#0d1a2c"),
+        "indigo": ("#1e1b4b", "#252659", "#2f2c6b", "#252659", "#1a1740"),
+        "emerald": ("#064e3b", "#0b5f49", "#106d55", "#0b5f49", "#06443a"),
+        "rose": ("#4c0519", "#5a0a22", "#6b102c", "#5a0a22", "#430416"),
+        "amber": ("#4a2c0a", "#5c3610", "#6a4015", "#5c3610", "#412508"),
+        "teal": ("#134e4a", "#155e5b", "#1e6e6b", "#155e5b", "#0f4643"),
+        "violet": ("#2e1065", "#3b1773", "#451f85", "#3b1773", "#250d57"),
+        "lime": ("#365314", "#3f6212", "#4d7c0f", "#3f6212", "#2f4a10"),
+        "cyan": ("#164e63", "#0e7490", "#0f7a99", "#0e7490", "#114255"),
+        "pink": ("#500724", "#5e0b2b", "#70143a", "#5e0b2b", "#46061f"),
+    }
+    bg, card, card_alt, topbar, tab_bg = background_variants.get(
+        accent_theme, background_variants["sky"]
+    )
     return {
-        "bg": "#f1f5f9",
-        "bg_card": "#ffffff",
-        "bg_card_alt": "#e2e8f0",
+        "bg": bg,
+        "bg_card": card,
+        "bg_card_alt": card_alt,
         "accent": accent,
         "accent_soft": accent_soft,
-        "text_primary": "#0f172a",
-        "text_muted": "#334155",
-        "border": "#cbd5f5",
-        "bg_dark": "#e2e8f0",
-        "tab_bg": "#e2e8f0",
-        "tab_active": "#ffffff",
-        "tab_text": "#1f2937",
-        "topbar": "#ffffff",
+        "text_primary": "#f8fafc",
+        "text_muted": "#d1d5db",
+        "border": "#1f2937",
+        "bg_dark": "#0b1220",
+        "tab_bg": tab_bg,
+        "tab_active": card,
+        "tab_text": "#e2e8f0",
+        "topbar": topbar,
     }
 
 
@@ -685,7 +669,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cfg = load_config()
         self.process_manager = ProcessManager()
         self.is_running = False
-        self.palette = build_palette("dark", self.cfg.accent_theme)
+        self.palette = build_palette(self.cfg.accent_theme)
         self.tray_icon: Optional[QtWidgets.QSystemTrayIcon] = None
         self.tray_menu: Optional[QtWidgets.QMenu] = None
         self.action_start: Optional[QtGui.QAction] = None
@@ -703,7 +687,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._ensure_default_password()
 
     def _apply_palette(self):
-        self.palette = build_palette("dark", self.cfg.accent_theme)
+        self.palette = build_palette(self.cfg.accent_theme)
         palette = self.palette
         stylesheet = f"""
             QMainWindow {{ background: {palette['bg']}; }}
@@ -779,6 +763,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 border: 1px solid {palette['border']};
                 border-radius: 12px;
                 background: {palette['bg_card']};
+            }}
+            QTabWidget::tab-bar {{
+                top: 8px;
             }}
             QTabBar::tab {{
                 background: {palette['tab_bg']};
@@ -1217,7 +1204,7 @@ class MainWindow(QtWidgets.QMainWindow):
             chrome_kiosk=target_mode == "kiosk",
             saver_enabled=self.saver_enabled.isChecked(),
             chrome_repeat=self.cfg.chrome_repeat,
-            ui_theme="dark",
+            ui_theme="accent",
             saver_image_mode=self.saver_mode.currentText(),
             audio_url=self.audio_url.text(),
             audio_enabled=self.audio_enabled.isChecked(),
@@ -1360,8 +1347,8 @@ class TargetWorker(QtCore.QObject):
         self.last_launch = 0.0
         self.last_refocus = 0.0
         self.pending_launch_at: Optional[float] = None
-        self.palette_key = ("dark", self.cfg.accent_theme)
-        self.palette = build_palette(*self.palette_key)
+        self.palette_key = self.cfg.accent_theme
+        self.palette = build_palette(self.palette_key)
         self.notice = NoticeWindow(self.palette)
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self._tick)
@@ -1369,10 +1356,10 @@ class TargetWorker(QtCore.QObject):
 
     def _tick(self):
         self.cfg = load_config()
-        new_key = ("dark", self.cfg.accent_theme)
+        new_key = self.cfg.accent_theme
         if new_key != self.palette_key:
             self.palette_key = new_key
-            self.palette = build_palette(*new_key)
+            self.palette = build_palette(new_key)
             self.notice.palette = self.palette
             self.notice.setStyleSheet(
                 f"""
@@ -1438,8 +1425,8 @@ class SaverWorker(QtCore.QObject):
     def __init__(self):
         super().__init__()
         self.cfg = load_config()
-        self.palette_key = ("dark", self.cfg.accent_theme)
-        self.palette = build_palette(*self.palette_key)
+        self.palette_key = self.cfg.accent_theme
+        self.palette = build_palette(self.palette_key)
         self.window = SaverWindow(self.cfg, self.palette)
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self._tick)
@@ -1448,10 +1435,10 @@ class SaverWorker(QtCore.QObject):
 
     def _tick(self):
         self.cfg = load_config()
-        new_key = ("dark", self.cfg.accent_theme)
+        new_key = self.cfg.accent_theme
         if new_key != self.palette_key:
             self.palette_key = new_key
-            self.palette = build_palette(*new_key)
+            self.palette = build_palette(new_key)
             self.window.palette = self.palette
         self.window.cfg = self.cfg
         if not self.cfg.saver_enabled:
