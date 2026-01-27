@@ -288,16 +288,16 @@ def build_palette(accent_theme: str, accent_color: str = "") -> dict:
     if accent_color:
         accent = accent_color
         accent_soft = _blend_with_white(accent, 0.45)
-        bg = _blend_with_white(accent, 0.88)
-        card = _blend_with_white(accent, 0.92)
-        card_alt = _blend_with_white(accent, 0.95)
-        topbar = _blend_with_white(accent, 0.84)
-        tab_bg = _blend_with_white(accent, 0.9)
-        bg = _blend_with_black(bg, 0.06)
-        card = _blend_with_black(card, 0.05)
-        card_alt = _blend_with_black(card_alt, 0.03)
-        topbar = _blend_with_black(topbar, 0.08)
-        tab_bg = _blend_with_black(tab_bg, 0.08)
+        bg = _blend_with_white(accent, 0.72)
+        card = _blend_with_white(accent, 0.8)
+        card_alt = _blend_with_white(accent, 0.86)
+        topbar = _blend_with_white(accent, 0.68)
+        tab_bg = _blend_with_white(accent, 0.76)
+        bg = _blend_with_black(bg, 0.12)
+        card = _blend_with_black(card, 0.1)
+        card_alt = _blend_with_black(card_alt, 0.06)
+        topbar = _blend_with_black(topbar, 0.14)
+        tab_bg = _blend_with_black(tab_bg, 0.12)
     else:
         bg = _blend_with_white(bg, 0.03)
         card = _blend_with_white(card, 0.02)
@@ -1117,6 +1117,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 border: none;
                 background: transparent;
             }}
+            QTabWidget::pane, QTabWidget::tab-bar {{
+                border-top: none;
+            }}
             QTabBar::base {{
                 border: none;
                 background: transparent;
@@ -1124,6 +1127,9 @@ class MainWindow(QtWidgets.QMainWindow):
             QTabBar::scroller {{
                 border: none;
                 background: transparent;
+            }}
+            QTabBar::tab:!selected {{
+                border-bottom: none;
             }}
             QTabBar::tab {{
                 background: {palette['tab_bg']};
