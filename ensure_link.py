@@ -934,7 +934,7 @@ class EasterEggDialog(QtWidgets.QDialog):
         message.setProperty("popup-role", "body")
         layout.addWidget(message)
         quote = QtWidgets.QLabel(
-            "<i>“좋은 하루는 자연스러운 깨움에서 시작됩니다.”<br>"
+            "<i>“좋은 하루는 자연스러운 시작에서 비롯됩니다.”<br>"
             "— AutoWake 비밀 노트</i>"
         )
         quote.setAlignment(QtCore.Qt.AlignCenter)
@@ -1621,7 +1621,7 @@ class NoticeConfigDialog(QtWidgets.QDialog):
                     f"QLabel, QCheckBox, QRadioButton {{ color: {self.palette['dialog_text']};",
                     "font-size: 14px; }}",
                     f"QGroupBox {{ background: {self.palette['dialog_bg']};",
-                    f"border: 1px solid {self.palette['dialog_border']};",
+                    f"border: 2px solid {self.palette['dialog_border']};",
                     "border-radius: 12px; margin-top: 10px; padding: 8px; }}",
                     "QGroupBox::title { subcontrol-origin: margin; left: 12px;",
                     "padding: 0 6px; font-size: 14px; font-weight: 700; }",
@@ -1630,6 +1630,28 @@ class NoticeConfigDialog(QtWidgets.QDialog):
                     f"background: {self.palette['bg_card']}; border-radius: 4px; }}",
                     f"QCheckBox::indicator:checked {{ border: 1px solid {self.palette['accent']};",
                     f"background: {self.palette['accent']}; border-radius: 4px; }}",
+                    f"QComboBox {{ background: {self.palette['bg_card']};",
+                    f"border: 1px solid {self.palette['accent']};",
+                    f"color: {self.palette['dialog_text']}; }}",
+                    f"QComboBox::drop-down {{ border: none; background: {self.palette['accent']}; }}",
+                    f"QComboBox::down-arrow {{ image: none; }}",
+                    f"QComboBox::down-arrow {{ border-left: 6px solid transparent;",
+                    f"border-right: 6px solid transparent;",
+                    f"border-top: 8px solid {self.palette['dialog_bg']}; }}",
+                    f"QSpinBox, QDoubleSpinBox {{ background: {self.palette['bg_card']};",
+                    f"border: 1px solid {self.palette['accent']};",
+                    f"color: {self.palette['dialog_text']}; }}",
+                    f"QSpinBox::up-button, QSpinBox::down-button,",
+                    f"QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{",
+                    f"border: none; background: {self.palette['accent']}; width: 18px; }}",
+                    f"QSpinBox::up-arrow, QSpinBox::down-arrow,",
+                    f"QDoubleSpinBox::up-arrow, QDoubleSpinBox::down-arrow {{",
+                    f"width: 0; height: 0; border-left: 5px solid transparent;",
+                    f"border-right: 5px solid transparent; }}",
+                    f"QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{",
+                    f"border-bottom: 7px solid {self.palette['dialog_bg']}; }}",
+                    f"QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{",
+                    f"border-top: 7px solid {self.palette['dialog_bg']}; }}",
                 ]
             )
         )
