@@ -1148,7 +1148,7 @@ class NoticeWindow(QtWidgets.QWidget):
             #NoticeFrame {{
                 background: {palette['bg_card']};
                 border-radius: 16px;
-                border: 1px solid {palette['border']};
+                border: none;
             }}
             #NoticeTitle {{
                 color: {palette['text_primary']};
@@ -1171,7 +1171,7 @@ class NoticeWindow(QtWidgets.QWidget):
                 [
                     f"background: {self.palette['bg_card']};",
                     "border-radius: 16px;",
-                    f"border: 1px solid {self.palette['border']};",
+                    "border: none;",
                 ]
             )
         )
