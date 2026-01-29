@@ -1414,6 +1414,9 @@ class NoticeWindow(QtWidgets.QWidget):
             width,
             height,
         )
+        icon = load_app_icon()
+        if not icon.isNull():
+            self.setWindowIcon(icon)
         self.show()
         self.raise_()
         self.activateWindow()
@@ -1457,6 +1460,10 @@ class NoticePreviewWidget(QtWidgets.QWidget):
         self.proxy = self.scene.addWidget(self.notice)
         self._apply_palette()
         self.apply_config(cfg)
+
+    def showEvent(self, event: QtGui.QShowEvent) -> None:
+        super().showEvent(event)
+        QtCore.QTimer.singleShot(0, self._sync_scale)
 
     def _apply_palette(self) -> None:
         palette = self.palette
@@ -1512,9 +1519,9 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        splitter.setChildrenCollapsible(False)
-        layout.addWidget(splitter, 1)
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
+        layout.addWidget(self.splitter, 1)
 
         preview_panel = QtWidgets.QWidget()
         preview_layout = QtWidgets.QVBoxLayout(preview_panel)
@@ -1530,6 +1537,18 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         control_layout = QtWidgets.QVBoxLayout(control_panel)
         control_layout.setContentsMargins(12, 12, 12, 12)
         control_layout.setSpacing(16)
+        control_panel.setStyleSheet(
+            " ".join(
+                [
+                    f"QWidget {{ background: {self.palette['dialog_bg']};",
+                    f"color: {self.palette['dialog_text']}; }}",
+                    f"QGroupBox {{ background: {self.palette['dialog_bg']};",
+                    f"border: 1px solid {self.palette['dialog_border']};",
+                    "border-radius: 12px; margin-top: 10px; padding: 8px; }}",
+                    "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; }",
+                ]
+            )
+        )
         control_panel.setStyleSheet(
             " ".join(
                 [
@@ -1702,11 +1721,33 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         button_row.addWidget(self.save_button)
         control_layout.addLayout(button_row)
 
-        control_panel.setMinimumWidth(560)
-        splitter.addWidget(control_panel)
-        splitter.addWidget(preview_panel)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
+        control_scroll = QtWidgets.QScrollArea()
+        control_scroll.setWidgetResizable(True)
+        control_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        control_scroll.setWidget(control_panel)
+
+        controls_wrapper = QtWidgets.QWidget()
+        controls_layout = QtWidgets.QVBoxLayout(controls_wrapper)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(0)
+        controls_layout.addWidget(control_scroll)
+        controls_wrapper.setMinimumWidth(560)
+
+        self.splitter.addWidget(controls_wrapper)
+        self.splitter.addWidget(preview_panel)
+        self.splitter.setStretchFactor(0, 3)
+        self.splitter.setStretchFactor(1, 2)
+        self.splitter.setSizes([560, 620])
+
+    def showEvent(self, event: QtGui.QShowEvent) -> None:
+        super().showEvent(event)
+        QtCore.QTimer.singleShot(0, self._sync_splitter)
+
+    def _sync_splitter(self) -> None:
+        if hasattr(self, "splitter"):
+            self.splitter.setSizes([560, 620])
+        if hasattr(self, "preview"):
+            self.preview._sync_scale()
 
     def _connect_signals(self) -> None:
         self.notice_title.textChanged.connect(self._update_preview)
@@ -3291,6 +3332,8 @@ class TargetWorker(QtCore.QObject):
         self.last_interaction_lock: Optional[bool] = None
         self.last_saver_active = False
         self.saver_release_hold_until = 0.0
+        self.last_ui_active = False
+        self.ui_release_hold_until = 0.0
         self.once_launched = False
         self.missing_window_since: Optional[float] = None
         self.timer = QtCore.QTimer()
@@ -3334,6 +3377,10 @@ class TargetWorker(QtCore.QObject):
         state = read_notice_state(self.cfg.work_dir)
         ui_active = int(state.get("ui_active", 0)) > 0
         saver_active = float(state.get("saver_active", 0.0)) > 0.5
+        if ui_active != self.last_ui_active:
+            self.last_ui_active = ui_active
+            if not ui_active:
+                self.ui_release_hold_until = time.time() + 0.5
         if saver_active != self.last_saver_active:
             self.last_saver_active = saver_active
             if not saver_active:
@@ -3356,7 +3403,10 @@ class TargetWorker(QtCore.QObject):
             if time.time() - dismissed_at >= interval_sec:
                 self.notice_dismissed = False
 
-        hold_notice = time.time() < self.saver_release_hold_until
+        hold_notice = (
+            time.time() < self.saver_release_hold_until
+            or time.time() < self.ui_release_hold_until
+        )
         if ui_active:
             if self.notice.isVisible():
                 self.notice.hide()
