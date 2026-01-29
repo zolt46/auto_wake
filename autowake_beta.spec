@@ -14,7 +14,11 @@ analysis = Analysis(
     [entry_script],
     pathex=[project_root],
     binaries=[],
-    datas=[(os.path.join(project_root, "assets", "default_saver.png"), "assets")],
+    datas=[
+        (os.path.join(project_root, "assets", "default_saver.png"), "assets"),
+        (os.path.join(project_root, "assets", "notice_default_1.png"), "assets"),
+        (os.path.join(project_root, "assets", "notice_default_2.png"), "assets"),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
