@@ -1253,6 +1253,9 @@ class NoticeWindow(QtWidgets.QWidget):
         self.setPalette(qpalette)
         self.setStyleSheet(
             f"""
+            #NoticeWindow {{
+                background: {frame_color};
+            }}
             #NoticeFrame {{
                 background: {palette['bg_card']};
                 border-radius: 16px;
@@ -1280,6 +1283,7 @@ class NoticeWindow(QtWidgets.QWidget):
             }}
             """
         )
+        self._apply_frame_style()
 
     def _apply_frame_style(self) -> None:
         self.frame.setStyleSheet(
@@ -3406,6 +3410,7 @@ class TargetWorker(QtCore.QObject):
             now = time.time()
             if (
                 self.cfg.target_window_mode != "minimized"
+                and not self.notice.isVisible()
                 and now - self.last_refocus >= self.cfg.target_refocus_interval_sec
             ):
                 keep_window_on_top(self._current_pid())
@@ -3485,6 +3490,13 @@ class SaverWorker(QtCore.QObject):
                         saver_trigger_at=time.time(),
                     )
                 self.window.show_fullscreen()
+                if not self.saver_visible:
+                    self.saver_visible = True
+                    write_notice_state(
+                        self.cfg.work_dir,
+                        saver_active=1.0,
+                        saver_trigger_at=time.time(),
+                    )
         if self.window.isVisible():
             self.window.refresh()
 
