@@ -212,6 +212,8 @@ class AppConfig:
     notice_footer_font_family: str = "Noto Sans KR"
     notice_frame_color: str = "#0f172a"
     notice_frame_padding: int = 24
+    notice_repeat_enabled: bool = False
+    notice_repeat_interval_min: int = 30
     notice_image_mode: str = DEFAULT_NOTICE_IMAGE_MODE
     notice_image_path: str = DEFAULT_NOTICE_IMAGE_PATH
     notice_bundled_image: str = DEFAULT_NOTICE_BUNDLED_IMAGE
@@ -292,6 +294,8 @@ class AppConfig:
             notice_footer_font_family=str(data.get("notice_footer_font_family", "Noto Sans KR")),
             notice_frame_color=str(data.get("notice_frame_color", "#0f172a")),
             notice_frame_padding=int(data.get("notice_frame_padding", 24)),
+            notice_repeat_enabled=bool(data.get("notice_repeat_enabled", False)),
+            notice_repeat_interval_min=int(data.get("notice_repeat_interval_min", 30)),
             notice_image_mode=str(data.get("notice_image_mode", DEFAULT_NOTICE_IMAGE_MODE)),
             notice_image_path=str(data.get("notice_image_path", DEFAULT_NOTICE_IMAGE_PATH)),
             notice_bundled_image=str(
@@ -736,13 +740,17 @@ class StepperInput(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
 
-        self.minus_button = QtWidgets.QPushButton("◀")
+        self.minus_button = QtWidgets.QPushButton("▼")
         self.minus_button.setObjectName("StepperButton")
-        self.plus_button = QtWidgets.QPushButton("▶")
+        self.plus_button = QtWidgets.QPushButton("▲")
         self.plus_button.setObjectName("StepperButton")
+        arrow_font = QtGui.QFont()
+        arrow_font.setPointSize(12)
+        arrow_font.setBold(True)
         for button in (self.minus_button, self.plus_button):
-            button.setFixedSize(24, 24)
+            button.setFixedSize(28, 28)
             button.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+            button.setFont(arrow_font)
 
         self.spin = QtWidgets.QDoubleSpinBox()
         self.spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
@@ -846,7 +854,19 @@ class UrlListDialog(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout(self)
         self.list_widget = QtWidgets.QListWidget()
         self.list_widget.addItems(urls)
-        layout.addWidget(self.list_widget)
+        list_row = QtWidgets.QHBoxLayout()
+        list_row.addWidget(self.list_widget, 1)
+        move_column = QtWidgets.QVBoxLayout()
+        move_column.addStretch()
+        self.move_up_button = QtWidgets.QPushButton("위로")
+        self.move_down_button = QtWidgets.QPushButton("아래로")
+        self.move_up_button.clicked.connect(lambda: self._move_selected(-1))
+        self.move_down_button.clicked.connect(lambda: self._move_selected(1))
+        move_column.addWidget(self.move_up_button)
+        move_column.addWidget(self.move_down_button)
+        move_column.addStretch()
+        list_row.addLayout(move_column)
+        layout.addLayout(list_row)
 
         input_row = QtWidgets.QHBoxLayout()
         self.url_input = QtWidgets.QLineEdit()
@@ -898,6 +918,17 @@ class UrlListDialog(QtWidgets.QDialog):
     def _remove_selected(self):
         for item in self.list_widget.selectedItems():
             self.list_widget.takeItem(self.list_widget.row(item))
+
+    def _move_selected(self, delta: int) -> None:
+        row = self.list_widget.currentRow()
+        if row < 0:
+            return
+        target = row + delta
+        if target < 0 or target >= self.list_widget.count():
+            return
+        item = self.list_widget.takeItem(row)
+        self.list_widget.insertItem(target, item)
+        self.list_widget.setCurrentRow(target)
 
     def urls(self) -> list[str]:
         return [
@@ -1560,9 +1591,10 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.body_text.setMinimumHeight(120)
         form.addRow("본문 내용", self.body_text)
         body_row = QtWidgets.QHBoxLayout()
-        self.body_font_size = QtWidgets.QSpinBox()
+        self.body_font_size = StepperInput()
         self.body_font_size.setRange(9, 28)
         self.body_font_size.setSingleStep(1)
+        self.body_font_size.setDecimals(0)
         self.body_bold = QtWidgets.QCheckBox("굵게")
         self.body_italic = QtWidgets.QCheckBox("기울임")
         self.body_font_family = QtWidgets.QComboBox()
@@ -1591,9 +1623,10 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.footer_text.setMinimumHeight(120)
         form.addRow("추가 내용", self.footer_text)
         footer_row = QtWidgets.QHBoxLayout()
-        self.footer_font_size = QtWidgets.QSpinBox()
+        self.footer_font_size = StepperInput()
         self.footer_font_size.setRange(9, 24)
         self.footer_font_size.setSingleStep(1)
+        self.footer_font_size.setDecimals(0)
         self.footer_bold = QtWidgets.QCheckBox("굵게")
         self.footer_italic = QtWidgets.QCheckBox("기울임")
         self.footer_font_family = QtWidgets.QComboBox()
@@ -1607,19 +1640,6 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         footer_font_row.addWidget(QtWidgets.QLabel("글씨체"))
         footer_font_row.addWidget(self.footer_font_family)
         form.addRow("", footer_font_row)
-        frame_row = QtWidgets.QHBoxLayout()
-        self.frame_color_button = QtWidgets.QPushButton("검은 영역 색상")
-        self.frame_color_button.clicked.connect(self._pick_frame_color)
-        self.frame_padding = StepperInput()
-        self.frame_padding.setRange(0, 80)
-        self.frame_padding.setSingleStep(2)
-        self.frame_padding.setDecimals(0)
-        frame_row.addWidget(self.frame_color_button)
-        frame_row.addSpacing(12)
-        frame_row.addWidget(QtWidgets.QLabel("검은 영역 두께"))
-        frame_row.addWidget(self.frame_padding)
-        frame_row.addStretch()
-        form.addRow("", frame_row)
         footer_row.addWidget(QtWidgets.QLabel("글씨 크기"))
         footer_row.addWidget(self.footer_font_size)
         footer_row.addSpacing(12)
@@ -1630,6 +1650,38 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         footer_row.addWidget(self.footer_align)
         footer_row.addStretch()
         form.addRow("", footer_row)
+
+        frame_row = QtWidgets.QHBoxLayout()
+        self.frame_color_button = QtWidgets.QPushButton("여백 색상")
+        self.frame_color_button.clicked.connect(self._pick_frame_color)
+        self.frame_padding = StepperInput()
+        self.frame_padding.setRange(0, 80)
+        self.frame_padding.setSingleStep(2)
+        self.frame_padding.setDecimals(0)
+        frame_row.addWidget(self.frame_color_button)
+        frame_row.addSpacing(12)
+        frame_row.addWidget(QtWidgets.QLabel("여백 폭"))
+        frame_row.addWidget(self.frame_padding)
+        frame_row.addStretch()
+        form.addRow("", frame_row)
+
+        repeat_row = QtWidgets.QHBoxLayout()
+        self.notice_repeat_enabled = QtWidgets.QCheckBox("닫힌 후 재노출")
+        self.notice_repeat_interval = StepperInput()
+        self.notice_repeat_interval.setRange(1, 240)
+        self.notice_repeat_interval.setSingleStep(1)
+        self.notice_repeat_interval.setDecimals(0)
+        repeat_row.addWidget(self.notice_repeat_enabled)
+        repeat_row.addSpacing(12)
+        repeat_row.addWidget(QtWidgets.QLabel("경과 시간(분)"))
+        repeat_row.addWidget(self.notice_repeat_interval)
+        repeat_row.addStretch()
+        form.addRow("", repeat_row)
+        self.notice_repeat_hint = QtWidgets.QLabel(
+            "스크린 세이버 사용 시 재노출 옵션은 비활성화됩니다."
+        )
+        self.notice_repeat_hint.setObjectName("CardSubtitle")
+        form.addRow("", self.notice_repeat_hint)
 
         control_layout.addLayout(form)
         control_layout.addStretch()
@@ -1671,6 +1723,8 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.footer_font_family.currentIndexChanged.connect(self._update_preview)
         self.footer_align.currentIndexChanged.connect(self._update_preview)
         self.frame_padding.valueChanged.connect(self._update_preview)
+        self.notice_repeat_enabled.stateChanged.connect(self._update_preview)
+        self.notice_repeat_interval.valueChanged.connect(self._update_preview)
 
     def _load_config(self, cfg: AppConfig) -> None:
         self.notice_title.setText(cfg.notice_title)
@@ -1705,6 +1759,12 @@ class NoticeConfigDialog(QtWidgets.QDialog):
             self.footer_align.setCurrentIndex(footer_align_index)
         self.frame_padding.setValue(float(cfg.notice_frame_padding))
         self._update_frame_color_button(cfg.notice_frame_color)
+        self.notice_repeat_enabled.setChecked(bool(cfg.notice_repeat_enabled))
+        self.notice_repeat_interval.setValue(float(cfg.notice_repeat_interval_min))
+        saver_enabled = bool(cfg.saver_enabled)
+        self.notice_repeat_enabled.setEnabled(not saver_enabled)
+        self.notice_repeat_interval.setEnabled(not saver_enabled)
+        self.notice_repeat_hint.setVisible(saver_enabled)
         self._handle_image_mode()
 
     def _handle_image_mode(self) -> None:
@@ -1805,6 +1865,8 @@ class NoticeConfigDialog(QtWidgets.QDialog):
             notice_footer_font_family=str(data.get("notice_footer_font_family", "Noto Sans KR")),
             notice_frame_color=str(data.get("notice_frame_color", "#0f172a")),
             notice_frame_padding=int(data.get("notice_frame_padding", 24)),
+            notice_repeat_enabled=bool(data.get("notice_repeat_enabled", False)),
+            notice_repeat_interval_min=int(data.get("notice_repeat_interval_min", 30)),
             notice_image_mode=str(data.get("notice_image_mode", DEFAULT_NOTICE_IMAGE_MODE)),
             notice_image_path=str(data.get("notice_image_path", DEFAULT_NOTICE_IMAGE_PATH)),
             notice_bundled_image=str(
@@ -1835,6 +1897,8 @@ class NoticeConfigDialog(QtWidgets.QDialog):
             "notice_footer_font_family": self.footer_font_family.currentText(),
             "notice_frame_color": self._frame_color_value(),
             "notice_frame_padding": int(self.frame_padding.value()),
+            "notice_repeat_enabled": bool(self.notice_repeat_enabled.isChecked()),
+            "notice_repeat_interval_min": int(self.notice_repeat_interval.value()),
             "notice_image_mode": str(self.image_mode.currentData()),
             "notice_image_path": self.image_path.text().strip(),
             "notice_bundled_image": str(self.bundled_image.currentData()),
@@ -1860,6 +1924,8 @@ class NoticeConfigDialog(QtWidgets.QDialog):
             notice_footer_font_family=config["notice_footer_font_family"],
             notice_frame_color=config["notice_frame_color"],
             notice_frame_padding=config["notice_frame_padding"],
+            notice_repeat_enabled=config["notice_repeat_enabled"],
+            notice_repeat_interval_min=config["notice_repeat_interval_min"],
             notice_image_mode=config["notice_image_mode"],
             notice_image_path=config["notice_image_path"],
             notice_bundled_image=config["notice_bundled_image"],
@@ -2105,11 +2171,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: {palette['text_primary']};
                 border: 1px solid {palette['border']};
                 border-radius: 10px;
-                min-width: 24px;
-                min-height: 24px;
+                min-width: 28px;
+                min-height: 28px;
                 padding: 0px;
-                font-size: 14px;
-                font-weight: 700;
+                font-size: 16px;
+                font-weight: 800;
             }}
             QPushButton#StepperButton:hover {{
                 background: {palette['accent_soft']};
@@ -2581,6 +2647,8 @@ class MainWindow(QtWidgets.QMainWindow):
             "notice_footer_font_family": cfg.notice_footer_font_family,
             "notice_frame_color": cfg.notice_frame_color,
             "notice_frame_padding": cfg.notice_frame_padding,
+            "notice_repeat_enabled": cfg.notice_repeat_enabled,
+            "notice_repeat_interval_min": cfg.notice_repeat_interval_min,
             "notice_image_mode": cfg.notice_image_mode,
             "notice_image_path": cfg.notice_image_path,
             "notice_bundled_image": cfg.notice_bundled_image,
@@ -2922,6 +2990,14 @@ class MainWindow(QtWidgets.QMainWindow):
             notice_frame_padding=int(
                 notice_config.get("notice_frame_padding", self.cfg.notice_frame_padding)
             ),
+            notice_repeat_enabled=bool(
+                notice_config.get("notice_repeat_enabled", self.cfg.notice_repeat_enabled)
+            ),
+            notice_repeat_interval_min=int(
+                notice_config.get(
+                    "notice_repeat_interval_min", self.cfg.notice_repeat_interval_min
+                )
+            ),
             notice_image_mode=str(
                 notice_config.get("notice_image_mode", self.cfg.notice_image_mode)
             ),
@@ -2985,25 +3061,37 @@ class MainWindow(QtWidgets.QMainWindow):
         if getattr(self, "_loading", False):
             return
         self._save_config()
+        self._sync_workers()
 
     def _start_workers(self):
         self._save_config()
-        cfg = self.cfg
         if self.is_running:
             return
-        if cfg.audio_enabled:
-            self.process_manager.start("audio")
-        if cfg.target_enabled or cfg.notice_enabled:
-            self.process_manager.start("target")
-        if cfg.saver_enabled:
-            self.process_manager.start("saver")
         self.is_running = True
+        self._sync_workers()
         self._update_run_state_labels()
 
     def _stop_workers(self):
         self.process_manager.stop_all()
         self.is_running = False
         self._update_run_state_labels()
+
+    def _sync_workers(self) -> None:
+        if not self.is_running:
+            return
+        cfg = self.cfg
+        if cfg.audio_enabled:
+            self.process_manager.start("audio")
+        else:
+            self.process_manager.stop("audio")
+        if cfg.target_enabled or cfg.notice_enabled:
+            self.process_manager.start("target")
+        else:
+            self.process_manager.stop("target")
+        if cfg.saver_enabled:
+            self.process_manager.start("saver")
+        else:
+            self.process_manager.stop("saver")
 
     def _update_run_state_labels(self):
         if self.is_running:
@@ -3168,6 +3256,7 @@ class TargetWorker(QtCore.QObject):
 
     def _dismiss_notice(self):
         self.notice_dismissed = True
+        write_notice_state(self.cfg.work_dir, notice_dismissed_at=time.time())
 
     def _tick(self):
         self.cfg = load_config()
@@ -3208,6 +3297,18 @@ class TargetWorker(QtCore.QObject):
             self.pending_notice_after_saver = True
             self.notice_dismissed = False
 
+        dismissed_at = float(state.get("notice_dismissed_at", 0.0))
+        if (
+            not saver_active
+            and not self.cfg.saver_enabled
+            and self.cfg.notice_repeat_enabled
+            and self.notice_dismissed
+            and dismissed_at > 0
+        ):
+            interval_sec = max(1, int(self.cfg.notice_repeat_interval_min)) * 60
+            if time.time() - dismissed_at >= interval_sec:
+                self.notice_dismissed = False
+
         if saver_active:
             if self.notice.isVisible():
                 self.notice.hide()
@@ -3215,6 +3316,12 @@ class TargetWorker(QtCore.QObject):
         elif self.cfg.notice_enabled and not self.notice_dismissed:
             if not self.notice.isVisible():
                 self.notice.show_centered()
+                now = time.time()
+                write_notice_state(
+                    self.cfg.work_dir,
+                    notice_last_shown_at=now,
+                    notice_dismissed_at=0.0,
+                )
             desired_lock = not ui_active
             if self.last_interaction_lock is None or desired_lock != self.last_interaction_lock:
                 self.notice.set_interaction_lock(desired_lock)
