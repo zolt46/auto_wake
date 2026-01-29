@@ -8,9 +8,28 @@ block_cipher = None
 spec_path = globals().get("specpath") or os.getcwd()
 project_root = os.path.abspath(spec_path)
 entry_script = os.path.join(project_root, "autowake_git", "ensure_link.py")
-icon_path = os.path.join(project_root, "assets", "icon.ico")
-if not os.path.exists(icon_path):
-    icon_path = os.path.join(project_root, "assets", "icon.png")
+icon_ico_path = os.path.join(project_root, "assets", "icon.ico")
+icon_png_path = os.path.join(project_root, "assets", "icon.png")
+
+
+def _ensure_ico():
+    if os.path.exists(icon_ico_path):
+        return icon_ico_path
+    if not os.path.exists(icon_png_path):
+        return None
+    try:
+        from PIL import Image
+    except Exception:
+        return icon_png_path
+    try:
+        img = Image.open(icon_png_path)
+        img.save(icon_ico_path, format="ICO", sizes=[(256, 256), (128, 128), (64, 64), (32, 32), (16, 16)])
+        return icon_ico_path
+    except Exception:
+        return icon_png_path
+
+
+icon_path = _ensure_ico()
 
 
 analysis = Analysis(

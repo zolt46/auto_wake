@@ -2078,6 +2078,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_quit: Optional[QtGui.QAction] = None
         self._password_dialog: Optional[PasswordDialog] = None
         self._opening_settings = False
+        self._raising_window = False
         self.notice_config: dict[str, object] = {}
         self._build_ui()
         self._apply_palette()
@@ -2726,7 +2727,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def showEvent(self, event: QtGui.QShowEvent) -> None:
         update_notice_state_counter(self.cfg.work_dir, "ui_active", 1)
         super().showEvent(event)
-        QtCore.QTimer.singleShot(0, self._bring_window_to_front)
 
     def hideEvent(self, event: QtGui.QHideEvent) -> None:
         update_notice_state_counter(self.cfg.work_dir, "ui_active", -1)
@@ -2840,6 +2840,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_stop.setEnabled(self.is_running)
 
     def _bring_window_to_front(self) -> None:
+        if self._raising_window:
+            return
+        self._raising_window = True
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
         self.showNormal()
         self.raise_()
@@ -2849,6 +2852,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _clear_window_on_top(self) -> None:
         self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowStaysOnTopHint)
         self.show()
+        self._raising_window = False
 
     def _bring_dialog_to_front(self, dialog: QtWidgets.QDialog) -> None:
         dialog.setWindowFlags(dialog.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
