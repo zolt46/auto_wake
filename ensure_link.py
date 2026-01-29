@@ -502,10 +502,50 @@ def keep_window_on_top(pid: int) -> None:
         user32.SetForegroundWindow(hwnd)
 
 
+def minimize_window(pid: int) -> None:
+    handles = find_window_handles_by_pid(pid)
+    for hwnd in handles:
+        user32.ShowWindow(hwnd, 6)
+
+
+def find_chrome_processes_by_profile(profile_dir: str) -> list[int]:
+    if os.name != "nt" or not profile_dir:
+        return []
+    try:
+        escaped = profile_dir.replace("\\", "\\\\")
+        query = f"CommandLine like '%--user-data-dir={escaped}%'"
+        output = subprocess.check_output(
+            ["wmic", "process", "where", query, "get", "ProcessId,CommandLine", "/format:csv"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return []
+    pids: list[int] = []
+    for line in output.splitlines():
+        if "--user-data-dir" not in line:
+            continue
+        parts = [part for part in line.split(",") if part]
+        if not parts:
+            continue
+        pid_str = parts[-1].strip()
+        if pid_str.isdigit():
+            pids.append(int(pid_str))
+    return pids
+
+
+def _normalize_notice_text(value: str, fallback: str) -> str:
+    if value is None:
+        return fallback
+    if value.strip() == "":
+        return fallback
+    return value
+
+
 def build_notice_content(cfg: AppConfig) -> tuple[str, str, str]:
     title = (cfg.notice_title or "").strip() or DEFAULT_NOTICE_TITLE
-    body = (cfg.notice_body or "").strip() or DEFAULT_NOTICE_BODY
-    footer = (cfg.notice_footer or "").strip() or DEFAULT_NOTICE_FOOTER
+    body = _normalize_notice_text(cfg.notice_body, DEFAULT_NOTICE_BODY)
+    footer = _normalize_notice_text(cfg.notice_footer, DEFAULT_NOTICE_FOOTER)
     return title, body, footer
 
 
@@ -964,7 +1004,9 @@ class NoticeWindow(QtWidgets.QWidget):
 
     def __init__(self, palette: dict, cfg: AppConfig, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.WindowTitleHint)
+        self.setWindowFlags(
+            QtCore.Qt.Window | QtCore.Qt.WindowTitleHint | QtCore.Qt.WindowStaysOnTopHint
+        )
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setWindowTitle("AutoWake 안내")
         self.palette = palette
@@ -1029,6 +1071,8 @@ class NoticeWindow(QtWidgets.QWidget):
         self.cfg = cfg
         title, body, footer = build_notice_content(cfg)
         self.title_label.setText(title)
+        self.body_label.setTextFormat(QtCore.Qt.PlainText)
+        self.footer_label.setTextFormat(QtCore.Qt.PlainText)
         self.body_label.setText(body)
         self.footer_label.setText(footer)
         body_font = QtGui.QFont("Noto Sans KR", int(cfg.notice_body_font_size))
@@ -1041,14 +1085,17 @@ class NoticeWindow(QtWidgets.QWidget):
 
     def _update_image(self) -> None:
         path = resolve_notice_image_path(self.cfg)
+        height = max(20, int(self.cfg.notice_image_height))
+        self.image_label.setFixedHeight(height)
         if not path:
-            self.image_label.hide()
+            self.image_label.clear()
+            self.image_label.show()
             return
         pixmap = QtGui.QPixmap(path)
         if pixmap.isNull():
-            self.image_label.hide()
+            self.image_label.clear()
+            self.image_label.show()
             return
-        height = max(20, int(self.cfg.notice_image_height))
         scaled = pixmap.scaledToHeight(height, QtCore.Qt.SmoothTransformation)
         self.image_label.setPixmap(scaled)
         self.image_label.show()
@@ -1127,6 +1174,8 @@ class NoticePreviewWidget(QtWidgets.QFrame):
         self.cfg = cfg
         title, body, footer = build_notice_content(cfg)
         self.title_label.setText(title)
+        self.body_label.setTextFormat(QtCore.Qt.PlainText)
+        self.footer_label.setTextFormat(QtCore.Qt.PlainText)
         self.body_label.setText(body)
         self.footer_label.setText(footer)
         body_font = QtGui.QFont("Noto Sans KR", int(cfg.notice_body_font_size))
@@ -1139,14 +1188,17 @@ class NoticePreviewWidget(QtWidgets.QFrame):
 
     def _update_image(self) -> None:
         path = resolve_notice_image_path(self.cfg)
+        height = max(20, int(self.cfg.notice_image_height))
+        self.image_label.setFixedHeight(height)
         if not path:
-            self.image_label.hide()
+            self.image_label.clear()
+            self.image_label.show()
             return
         pixmap = QtGui.QPixmap(path)
         if pixmap.isNull():
-            self.image_label.hide()
+            self.image_label.clear()
+            self.image_label.show()
             return
-        height = max(20, int(self.cfg.notice_image_height))
         scaled = pixmap.scaledToHeight(height, QtCore.Qt.SmoothTransformation)
         self.image_label.setPixmap(scaled)
         self.image_label.show()
@@ -1229,7 +1281,7 @@ class NoticeConfigDialog(QtWidgets.QDialog):
 
         self.footer_text = QtWidgets.QTextEdit()
         self.footer_text.setMinimumHeight(120)
-        form.addRow("하단 삽입 내용", self.footer_text)
+        form.addRow("추가 내용", self.footer_text)
         footer_row = QtWidgets.QHBoxLayout()
         self.footer_font_size = QtWidgets.QSpinBox()
         self.footer_font_size.setRange(9, 24)
@@ -1366,8 +1418,12 @@ class NoticeConfigDialog(QtWidgets.QDialog):
     def _build_notice_config(self) -> dict:
         return {
             "notice_title": self.notice_title.text().strip() or DEFAULT_NOTICE_TITLE,
-            "notice_body": self.body_text.toPlainText().strip() or DEFAULT_NOTICE_BODY,
-            "notice_footer": self.footer_text.toPlainText().strip() or DEFAULT_NOTICE_FOOTER,
+            "notice_body": _normalize_notice_text(
+                self.body_text.toPlainText(), DEFAULT_NOTICE_BODY
+            ),
+            "notice_footer": _normalize_notice_text(
+                self.footer_text.toPlainText(), DEFAULT_NOTICE_FOOTER
+            ),
             "notice_body_font_size": int(self.body_font_size.value()),
             "notice_body_bold": bool(self.body_bold.isChecked()),
             "notice_footer_font_size": int(self.footer_font_size.value()),
@@ -1457,9 +1513,19 @@ class SaverWindow(QtWidgets.QWidget):
         if screen:
             mode = (self.cfg.saver_display_mode or "full").lower()
             geometry = screen.availableGeometry() if mode == "workarea" else screen.geometry()
-            scaled = pixmap.scaled(
-                geometry.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
-            )
+            target_size = geometry.size()
+            if mode == "workarea":
+                scaled = pixmap.scaled(
+                    target_size, QtCore.Qt.KeepAspectRatioByExpanding, QtCore.Qt.SmoothTransformation
+                )
+                if scaled.size() != target_size:
+                    x = max(0, (scaled.width() - target_size.width()) // 2)
+                    y = max(0, (scaled.height() - target_size.height()) // 2)
+                    scaled = scaled.copy(x, y, target_size.width(), target_size.height())
+            else:
+                scaled = pixmap.scaled(
+                    target_size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
+                )
         else:
             scaled = pixmap
         self.label.setPixmap(scaled)
@@ -1956,7 +2022,7 @@ class MainWindow(QtWidgets.QMainWindow):
         target_url_row.addWidget(self.target_url)
         target_url_row.addWidget(self.target_url_edit)
         self.target_mode = ModeSelector(
-            ["normal", "minimized", "fullscreen", "kiosk"],
+            ["minimized", "normal", "fullscreen", "kiosk"],
             labels={
                 "minimized": "최소화",
                 "normal": "일반 창",
@@ -2499,6 +2565,7 @@ class AudioWorker:
     def __init__(self):
         self.cfg = load_config()
         self.proc: Optional[subprocess.Popen] = None
+        self.external_pid: Optional[int] = None
         self.last_launch = 0.0
         self.pending_launch_at: Optional[float] = None
         self.last_config_signature: Optional[tuple] = None
@@ -2527,10 +2594,23 @@ class AudioWorker:
             if not self.cfg.audio_enabled:
                 self._stop_proc()
                 self.pending_launch_at = None
+                self.external_pid = None
                 self.once_launched = False
                 time.sleep(self.cfg.poll_sec)
                 continue
             if self.proc is None or self.proc.poll() is not None:
+                profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "audio")
+                os.makedirs(profile, exist_ok=True)
+                existing = find_chrome_processes_by_profile(profile)
+                if existing:
+                    self.external_pid = existing[0]
+                    self.last_launch = time.time()
+                    self.pending_launch_at = None
+                    self.once_launched = True
+                    if (self.cfg.audio_window_mode or "").lower() == "minimized":
+                        minimize_window(self.external_pid)
+                    time.sleep(self.cfg.poll_sec)
+                    continue
                 if self.cfg.audio_repeat_mode == "once" and self.once_launched:
                     time.sleep(self.cfg.poll_sec)
                     continue
@@ -2549,12 +2629,15 @@ class AudioWorker:
                     self.last_launch = time.time()
                     self.pending_launch_at = None
                     self.once_launched = True
+                    if self.proc and (self.cfg.audio_window_mode or "").lower() == "minimized":
+                        minimize_window(self.proc.pid)
             time.sleep(max(self.cfg.poll_sec, 0.2))
 
     def _stop_proc(self):
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
         self.proc = None
+        self.external_pid = None
 
 
 class TargetWorker(QtCore.QObject):
@@ -2562,6 +2645,7 @@ class TargetWorker(QtCore.QObject):
         super().__init__()
         self.cfg = load_config()
         self.proc: Optional[subprocess.Popen] = None
+        self.external_pid: Optional[int] = None
         self.last_launch = 0.0
         self.last_refocus = 0.0
         self.pending_launch_at: Optional[float] = None
@@ -2614,6 +2698,8 @@ class TargetWorker(QtCore.QObject):
         if self.cfg.notice_enabled and self.cfg.target_enabled and not self.notice_dismissed:
             if not self.notice.isVisible():
                 self.notice.show_centered()
+            self.notice.raise_()
+            self.notice.activateWindow()
         else:
             self.notice.hide()
 
@@ -2621,9 +2707,10 @@ class TargetWorker(QtCore.QObject):
             self._stop_proc()
             self.pending_launch_at = None
             self.once_launched = False
+            self.external_pid = None
             return
 
-        if self.proc and self.proc.poll() is None:
+        if self._current_pid():
             if self._proc_has_visible_window():
                 self.missing_window_since = None
             else:
@@ -2635,6 +2722,17 @@ class TargetWorker(QtCore.QObject):
                     self.missing_window_since = None
 
         if self.proc is None or self.proc.poll() is not None:
+            profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "target")
+            os.makedirs(profile, exist_ok=True)
+            existing = find_chrome_processes_by_profile(profile)
+            if existing:
+                self.external_pid = existing[0]
+                self.last_launch = time.time()
+                self.pending_launch_at = None
+                self.once_launched = True
+                if (self.cfg.target_window_mode or "").lower() == "minimized":
+                    minimize_window(self.external_pid)
+                return
             if self.cfg.target_repeat_mode == "once" and self.once_launched:
                 return
             now = time.time()
@@ -2659,20 +2757,35 @@ class TargetWorker(QtCore.QObject):
                 self.pending_launch_at = None
                 self.once_launched = True
                 self.missing_window_since = None
+                if self.proc and (self.cfg.target_window_mode or "").lower() == "minimized":
+                    minimize_window(self.proc.pid)
 
-        if self.proc and self.proc.poll() is None:
+        if self._current_pid():
             now = time.time()
             if (
                 self.cfg.target_window_mode != "minimized"
+                and not self.notice.isVisible()
                 and now - self.last_refocus >= self.cfg.target_refocus_interval_sec
             ):
-                keep_window_on_top(self.proc.pid)
+                keep_window_on_top(self._current_pid())
                 self.last_refocus = now
 
     def _stop_proc(self):
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
         self.proc = None
+        self.external_pid = None
+
+    def _proc_has_visible_window(self) -> bool:
+        pid = self._current_pid()
+        if not pid:
+            return False
+        return bool(find_window_handles_by_pid(pid))
+
+    def _current_pid(self) -> Optional[int]:
+        if self.proc and self.proc.poll() is None:
+            return self.proc.pid
+        return self.external_pid
 
     def _proc_has_visible_window(self) -> bool:
         if not self.proc or self.proc.poll() is not None:
