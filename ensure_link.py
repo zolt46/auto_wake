@@ -58,6 +58,7 @@ NOTICE_FONT_FAMILIES = [
     "Segoe UI",
     "Arial",
 ]
+NOTICE_STATE_FILE = "notice_state.json"
 
 CHROME_CANDIDATES = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -68,6 +69,35 @@ CHROME_CANDIDATES = [
 
 def config_file_path(work_dir: str) -> str:
     return os.path.join(work_dir, "config.json")
+
+
+def notice_state_path(work_dir: str) -> str:
+    return os.path.join(work_dir, NOTICE_STATE_FILE)
+
+
+def read_notice_state(work_dir: str) -> dict:
+    path = notice_state_path(work_dir)
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            data = json.load(file)
+            if isinstance(data, dict):
+                return data
+    except FileNotFoundError:
+        return {}
+    except Exception:
+        return {}
+    return {}
+
+
+def write_notice_state(work_dir: str, **updates: float) -> None:
+    os.makedirs(work_dir, exist_ok=True)
+    state = read_notice_state(work_dir)
+    state.update({key: float(value) for key, value in updates.items()})
+    path = notice_state_path(work_dir)
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as file:
+        json.dump(state, file, ensure_ascii=False)
+    os.replace(tmp_path, path)
 
 
 def log(msg: str) -> None:
@@ -1059,9 +1089,10 @@ class NoticeWindow(QtWidgets.QWidget):
         super().__init__(parent)
         self.setObjectName("NoticeWindow")
         self.setWindowFlags(
-            QtCore.Qt.Window | QtCore.Qt.WindowTitleHint | QtCore.Qt.WindowStaysOnTopHint
+            QtCore.Qt.Window | QtCore.Qt.WindowTitleHint
         )
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, False)
+        self.setAutoFillBackground(True)
         self.setWindowTitle("AutoWake 안내")
         self.palette = palette
         self.cfg = cfg
@@ -1106,6 +1137,9 @@ class NoticeWindow(QtWidgets.QWidget):
     def _apply_palette(self) -> None:
         palette = self.palette
         frame_color = self.cfg.notice_frame_color or "#0f172a"
+        qpalette = QtGui.QPalette()
+        qpalette.setColor(QtGui.QPalette.Window, QtGui.QColor(frame_color))
+        self.setPalette(qpalette)
         self.setStyleSheet(
             f"""
             #NoticeWindow {{
@@ -1217,8 +1251,9 @@ class NoticePreviewWidget(QtWidgets.QFrame):
         self.palette = palette
         self.cfg = cfg
         self.setObjectName("NoticePreview")
-        self.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.setFrameShadow(QtWidgets.QFrame.Raised)
+        self.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.setFrameShadow(QtWidgets.QFrame.Plain)
+        self.setLineWidth(0)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -2833,6 +2868,7 @@ class AudioWorker:
         self.cfg = load_config()
         self.proc: Optional[subprocess.Popen] = None
         self.external_pid: Optional[int] = None
+        self.notice_last_pid: Optional[int] = None
         self.last_minimized_pid: Optional[int] = None
         self.pending_minimize_pid: Optional[int] = None
         self.pending_minimize_at: Optional[float] = None
@@ -2877,6 +2913,12 @@ class AudioWorker:
                     self.last_launch = time.time()
                     self.pending_launch_at = None
                     self.once_launched = True
+                    if self.external_pid != self.notice_last_pid:
+                        write_notice_state(
+                            self.cfg.work_dir,
+                            audio_launch_at=time.time(),
+                        )
+                        self.notice_last_pid = self.external_pid
                     time.sleep(self.cfg.poll_sec)
                     continue
                 if self.cfg.audio_repeat_mode == "once" and self.once_launched:
@@ -2897,6 +2939,12 @@ class AudioWorker:
                     self.last_launch = time.time()
                     self.pending_launch_at = None
                     self.once_launched = True
+                    if self.proc and self.proc.pid != self.notice_last_pid:
+                        write_notice_state(
+                            self.cfg.work_dir,
+                            audio_launch_at=time.time(),
+                        )
+                        self.notice_last_pid = self.proc.pid
                     if self.proc and (self.cfg.audio_window_mode or "").lower() == "minimized":
                         self.pending_minimize_pid = self.proc.pid
                         self.pending_minimize_at = time.time() + 0.5
@@ -2914,6 +2962,7 @@ class AudioWorker:
             self.proc.terminate()
         self.proc = None
         self.external_pid = None
+        self.notice_last_pid = None
         self.last_minimized_pid = None
         self.pending_minimize_pid = None
         self.pending_minimize_at = None
@@ -2940,6 +2989,10 @@ class TargetWorker(QtCore.QObject):
         self.notice.closed.connect(self._dismiss_notice)
         self.notice_dismissed = False
         self.last_notice_enabled = self.cfg.notice_enabled
+        state = read_notice_state(self.cfg.work_dir)
+        self.last_audio_launch_at = float(state.get("audio_launch_at", 0.0))
+        self.last_target_launch_at = float(state.get("target_launch_at", 0.0))
+        self.notice_last_pid: Optional[int] = None
         self.once_launched = False
         self.missing_window_since: Optional[float] = None
         self.timer = QtCore.QTimer()
@@ -2979,7 +3032,17 @@ class TargetWorker(QtCore.QObject):
             self.notice_dismissed = False
         self.last_notice_enabled = self.cfg.notice_enabled
 
-        if self.cfg.notice_enabled and self.cfg.target_enabled and not self.notice_dismissed:
+        state = read_notice_state(self.cfg.work_dir)
+        audio_launch_at = float(state.get("audio_launch_at", 0.0))
+        target_launch_at = float(state.get("target_launch_at", 0.0))
+        if audio_launch_at > self.last_audio_launch_at:
+            self.notice_dismissed = False
+            self.last_audio_launch_at = audio_launch_at
+        if target_launch_at > self.last_target_launch_at:
+            self.notice_dismissed = False
+            self.last_target_launch_at = target_launch_at
+
+        if self.cfg.notice_enabled and not self.notice_dismissed:
             if not self.notice.isVisible():
                 self.notice.show_centered()
             self.notice.raise_()
@@ -3017,6 +3080,11 @@ class TargetWorker(QtCore.QObject):
                 self.last_launch = time.time()
                 self.pending_launch_at = None
                 self.once_launched = True
+                if self.external_pid != self.notice_last_pid:
+                    now = time.time()
+                    write_notice_state(self.cfg.work_dir, target_launch_at=now)
+                    self.last_target_launch_at = now
+                    self.notice_last_pid = self.external_pid
                 return
             if self.cfg.target_repeat_mode == "once" and self.once_launched:
                 return
@@ -3042,6 +3110,11 @@ class TargetWorker(QtCore.QObject):
                 self.pending_launch_at = None
                 self.once_launched = True
                 self.missing_window_since = None
+                if self.proc and self.proc.pid != self.notice_last_pid:
+                    now = time.time()
+                    write_notice_state(self.cfg.work_dir, target_launch_at=now)
+                    self.last_target_launch_at = now
+                    self.notice_last_pid = self.proc.pid
                 if self.proc and (self.cfg.target_window_mode or "").lower() == "minimized":
                     self.pending_minimize_pid = self.proc.pid
                     self.pending_minimize_at = time.time() + 0.5
@@ -3072,6 +3145,7 @@ class TargetWorker(QtCore.QObject):
         self.last_minimized_pid = None
         self.pending_minimize_pid = None
         self.pending_minimize_at = None
+        self.notice_last_pid = None
 
     def _proc_has_visible_window(self) -> bool:
         pid = self._current_pid()
