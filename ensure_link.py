@@ -168,6 +168,8 @@ class AppConfig:
     notice_footer_italic: bool = False
     notice_footer_align: str = "left"
     notice_footer_font_family: str = "Noto Sans KR"
+    notice_border_color: str = ""
+    notice_border_width: int = 1
     notice_image_mode: str = DEFAULT_NOTICE_IMAGE_MODE
     notice_image_path: str = DEFAULT_NOTICE_IMAGE_PATH
     notice_bundled_image: str = DEFAULT_NOTICE_BUNDLED_IMAGE
@@ -246,6 +248,8 @@ class AppConfig:
             notice_footer_italic=bool(data.get("notice_footer_italic", False)),
             notice_footer_align=str(data.get("notice_footer_align", "left")),
             notice_footer_font_family=str(data.get("notice_footer_font_family", "Noto Sans KR")),
+            notice_border_color=str(data.get("notice_border_color", "")),
+            notice_border_width=int(data.get("notice_border_width", 1)),
             notice_image_mode=str(data.get("notice_image_mode", DEFAULT_NOTICE_IMAGE_MODE)),
             notice_image_path=str(data.get("notice_image_path", DEFAULT_NOTICE_IMAGE_PATH)),
             notice_bundled_image=str(
@@ -1067,9 +1071,9 @@ class NoticeWindow(QtWidgets.QWidget):
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
-        frame = QtWidgets.QFrame()
-        frame.setObjectName("NoticeFrame")
-        frame_layout = QtWidgets.QVBoxLayout(frame)
+        self.frame = QtWidgets.QFrame()
+        self.frame.setObjectName("NoticeFrame")
+        frame_layout = QtWidgets.QVBoxLayout(self.frame)
         header_row = QtWidgets.QHBoxLayout()
         self.title_label = QtWidgets.QLabel(DEFAULT_NOTICE_TITLE)
         self.title_label.setObjectName("NoticeTitle")
@@ -1091,7 +1095,7 @@ class NoticeWindow(QtWidgets.QWidget):
         frame_layout.addWidget(self.image_label)
         frame_layout.addWidget(self.body_label)
         frame_layout.addWidget(self.footer_label)
-        layout.addWidget(frame)
+        layout.addWidget(self.frame)
 
     def _apply_palette(self) -> None:
         palette = self.palette
@@ -1114,6 +1118,20 @@ class NoticeWindow(QtWidgets.QWidget):
                 color: {palette['text_muted']};
             }}
             """
+        )
+        self._apply_frame_style()
+
+    def _apply_frame_style(self) -> None:
+        border_color = self.cfg.notice_border_color or self.palette["border"]
+        border_width = max(1, int(self.cfg.notice_border_width))
+        self.frame.setStyleSheet(
+            " ".join(
+                [
+                    f"background: {self.palette['bg_card']};",
+                    "border-radius: 16px;",
+                    f"border: {border_width}px solid {border_color};",
+                ]
+            )
         )
 
     def update_content(self, cfg: AppConfig) -> None:
@@ -1142,6 +1160,7 @@ class NoticeWindow(QtWidgets.QWidget):
         self.footer_label.setStyleSheet(_notice_style(footer_font))
         self.body_label.setAlignment(_notice_alignment(cfg.notice_body_align))
         self.footer_label.setAlignment(_notice_alignment(cfg.notice_footer_align))
+        self._apply_frame_style()
         self._update_image()
 
     def _update_image(self) -> None:
@@ -1230,6 +1249,20 @@ class NoticePreviewWidget(QtWidgets.QFrame):
             }}
             """
         )
+        self._apply_frame_style()
+
+    def _apply_frame_style(self) -> None:
+        border_color = self.cfg.notice_border_color or self.palette["border"]
+        border_width = max(1, int(self.cfg.notice_border_width))
+        self.setStyleSheet(
+            " ".join(
+                [
+                    f"background: {self.palette['bg_card']};",
+                    "border-radius: 14px;",
+                    f"border: {border_width}px solid {border_color};",
+                ]
+            )
+        )
 
     def apply_config(self, cfg: AppConfig) -> None:
         self.cfg = cfg
@@ -1257,6 +1290,7 @@ class NoticePreviewWidget(QtWidgets.QFrame):
         self.footer_label.setStyleSheet(_notice_style(footer_font))
         self.body_label.setAlignment(_notice_alignment(cfg.notice_body_align))
         self.footer_label.setAlignment(_notice_alignment(cfg.notice_footer_align))
+        self._apply_frame_style()
         self._update_image()
 
     def _update_image(self) -> None:
@@ -1388,6 +1422,19 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         footer_font_row.addWidget(QtWidgets.QLabel("글씨체"))
         footer_font_row.addWidget(self.footer_font_family)
         form.addRow("", footer_font_row)
+        border_row = QtWidgets.QHBoxLayout()
+        self.border_color_button = QtWidgets.QPushButton("테두리 색상")
+        self.border_color_button.clicked.connect(self._pick_border_color)
+        self.border_width = StepperInput()
+        self.border_width.setRange(1, 8)
+        self.border_width.setSingleStep(1)
+        self.border_width.setDecimals(0)
+        border_row.addWidget(self.border_color_button)
+        border_row.addSpacing(12)
+        border_row.addWidget(QtWidgets.QLabel("테두리 두께"))
+        border_row.addWidget(self.border_width)
+        border_row.addStretch()
+        form.addRow("", border_row)
         footer_row.addWidget(QtWidgets.QLabel("글씨 크기"))
         footer_row.addWidget(self.footer_font_size)
         footer_row.addSpacing(12)
@@ -1438,6 +1485,7 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.footer_italic.stateChanged.connect(self._update_preview)
         self.footer_font_family.currentIndexChanged.connect(self._update_preview)
         self.footer_align.currentIndexChanged.connect(self._update_preview)
+        self.border_width.valueChanged.connect(self._update_preview)
 
     def _load_config(self, cfg: AppConfig) -> None:
         self.notice_title.setText(cfg.notice_title)
@@ -1470,6 +1518,8 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         footer_align_index = self.footer_align.findData(cfg.notice_footer_align)
         if footer_align_index >= 0:
             self.footer_align.setCurrentIndex(footer_align_index)
+        self.border_width.setValue(float(cfg.notice_border_width))
+        self._update_border_color_button(cfg.notice_border_color)
         self._handle_image_mode()
 
     def _handle_image_mode(self) -> None:
@@ -1480,6 +1530,37 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.image_path.setEnabled(is_path)
         self.image_path_browse.setEnabled(is_path)
         self._update_preview()
+
+    def _border_color_value(self) -> str:
+        return getattr(self, "_border_color_value_hex", "") or ""
+
+    def _update_border_color_button(self, color_hex: str) -> None:
+        if not color_hex:
+            color_hex = self.palette["border"]
+        self._border_color_value_hex = color_hex
+        self.border_color_button.setStyleSheet(
+            " ".join(
+                [
+                    f"background: {color_hex};",
+                    "color: #0b1220;",
+                    "border-radius: 10px;",
+                    "padding: 6px 12px;",
+                    "font-weight: 700;",
+                ]
+            )
+        )
+
+    def _pick_border_color(self) -> None:
+        current = self._border_color_value() or self.palette["border"]
+        dialog = QtWidgets.QColorDialog(QtGui.QColor(current), self)
+        dialog.setOption(QtWidgets.QColorDialog.ShowAlphaChannel, False)
+        dialog.setOption(QtWidgets.QColorDialog.DontUseNativeDialog, True)
+        dialog.currentColorChanged.connect(
+            lambda color: self._update_border_color_button(color.name())
+        )
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            self._update_border_color_button(dialog.currentColor().name())
+            self._update_preview()
 
     def _browse_image(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -1537,6 +1618,8 @@ class NoticeConfigDialog(QtWidgets.QDialog):
             notice_footer_italic=bool(data.get("notice_footer_italic", False)),
             notice_footer_align=str(data.get("notice_footer_align", "left")),
             notice_footer_font_family=str(data.get("notice_footer_font_family", "Noto Sans KR")),
+            notice_border_color=str(data.get("notice_border_color", "")),
+            notice_border_width=int(data.get("notice_border_width", 1)),
             notice_image_mode=str(data.get("notice_image_mode", DEFAULT_NOTICE_IMAGE_MODE)),
             notice_image_path=str(data.get("notice_image_path", DEFAULT_NOTICE_IMAGE_PATH)),
             notice_bundled_image=str(
@@ -1565,6 +1648,8 @@ class NoticeConfigDialog(QtWidgets.QDialog):
             "notice_footer_italic": bool(self.footer_italic.isChecked()),
             "notice_footer_align": str(self.footer_align.currentData()),
             "notice_footer_font_family": self.footer_font_family.currentText(),
+            "notice_border_color": self._border_color_value(),
+            "notice_border_width": int(self.border_width.value()),
             "notice_image_mode": str(self.image_mode.currentData()),
             "notice_image_path": self.image_path.text().strip(),
             "notice_bundled_image": str(self.bundled_image.currentData()),
@@ -1588,6 +1673,8 @@ class NoticeConfigDialog(QtWidgets.QDialog):
             notice_footer_italic=config["notice_footer_italic"],
             notice_footer_align=config["notice_footer_align"],
             notice_footer_font_family=config["notice_footer_font_family"],
+            notice_border_color=config["notice_border_color"],
+            notice_border_width=config["notice_border_width"],
             notice_image_mode=config["notice_image_mode"],
             notice_image_path=config["notice_image_path"],
             notice_bundled_image=config["notice_bundled_image"],
@@ -2307,6 +2394,8 @@ class MainWindow(QtWidgets.QMainWindow):
             "notice_footer_italic": cfg.notice_footer_italic,
             "notice_footer_align": cfg.notice_footer_align,
             "notice_footer_font_family": cfg.notice_footer_font_family,
+            "notice_border_color": cfg.notice_border_color,
+            "notice_border_width": cfg.notice_border_width,
             "notice_image_mode": cfg.notice_image_mode,
             "notice_image_path": cfg.notice_image_path,
             "notice_bundled_image": cfg.notice_bundled_image,
@@ -2634,6 +2723,12 @@ class MainWindow(QtWidgets.QMainWindow):
             notice_footer_font_family=str(
                 notice_config.get("notice_footer_font_family", self.cfg.notice_footer_font_family)
             ),
+            notice_border_color=str(
+                notice_config.get("notice_border_color", self.cfg.notice_border_color)
+            ),
+            notice_border_width=int(
+                notice_config.get("notice_border_width", self.cfg.notice_border_width)
+            ),
             notice_image_mode=str(
                 notice_config.get("notice_image_mode", self.cfg.notice_image_mode)
             ),
@@ -2735,6 +2830,8 @@ class AudioWorker:
         self.proc: Optional[subprocess.Popen] = None
         self.external_pid: Optional[int] = None
         self.last_minimized_pid: Optional[int] = None
+        self.pending_minimize_pid: Optional[int] = None
+        self.pending_minimize_at: Optional[float] = None
         self.last_launch = 0.0
         self.pending_launch_at: Optional[float] = None
         self.last_config_signature: Optional[tuple] = None
@@ -2776,12 +2873,6 @@ class AudioWorker:
                     self.last_launch = time.time()
                     self.pending_launch_at = None
                     self.once_launched = True
-                    if (
-                        (self.cfg.audio_window_mode or "").lower() == "minimized"
-                        and self.external_pid != self.last_minimized_pid
-                    ):
-                        minimize_window(self.external_pid)
-                        self.last_minimized_pid = self.external_pid
                     time.sleep(self.cfg.poll_sec)
                     continue
                 if self.cfg.audio_repeat_mode == "once" and self.once_launched:
@@ -2802,13 +2893,16 @@ class AudioWorker:
                     self.last_launch = time.time()
                     self.pending_launch_at = None
                     self.once_launched = True
-                    if (
-                        self.proc
-                        and (self.cfg.audio_window_mode or "").lower() == "minimized"
-                        and self.proc.pid != self.last_minimized_pid
-                    ):
-                        minimize_window(self.proc.pid)
-                        self.last_minimized_pid = self.proc.pid
+                    if self.proc and (self.cfg.audio_window_mode or "").lower() == "minimized":
+                        self.pending_minimize_pid = self.proc.pid
+                        self.pending_minimize_at = time.time() + 0.5
+            if self.pending_minimize_pid and (self.cfg.audio_window_mode or "").lower() == "minimized":
+                if time.time() >= (self.pending_minimize_at or 0):
+                    if find_window_handles_by_pid(self.pending_minimize_pid):
+                        minimize_window(self.pending_minimize_pid)
+                        self.last_minimized_pid = self.pending_minimize_pid
+                        self.pending_minimize_pid = None
+                        self.pending_minimize_at = None
             time.sleep(max(self.cfg.poll_sec, 0.2))
 
     def _stop_proc(self):
@@ -2817,6 +2911,8 @@ class AudioWorker:
         self.proc = None
         self.external_pid = None
         self.last_minimized_pid = None
+        self.pending_minimize_pid = None
+        self.pending_minimize_at = None
 
 
 class TargetWorker(QtCore.QObject):
@@ -2826,6 +2922,8 @@ class TargetWorker(QtCore.QObject):
         self.proc: Optional[subprocess.Popen] = None
         self.external_pid: Optional[int] = None
         self.last_minimized_pid: Optional[int] = None
+        self.pending_minimize_pid: Optional[int] = None
+        self.pending_minimize_at: Optional[float] = None
         self.last_launch = 0.0
         self.last_refocus = 0.0
         self.pending_launch_at: Optional[float] = None
@@ -2913,12 +3011,6 @@ class TargetWorker(QtCore.QObject):
                 self.last_launch = time.time()
                 self.pending_launch_at = None
                 self.once_launched = True
-                if (
-                    (self.cfg.target_window_mode or "").lower() == "minimized"
-                    and self.external_pid != self.last_minimized_pid
-                ):
-                    minimize_window(self.external_pid)
-                    self.last_minimized_pid = self.external_pid
                 return
             if self.cfg.target_repeat_mode == "once" and self.once_launched:
                 return
@@ -2944,13 +3036,9 @@ class TargetWorker(QtCore.QObject):
                 self.pending_launch_at = None
                 self.once_launched = True
                 self.missing_window_since = None
-                if (
-                    self.proc
-                    and (self.cfg.target_window_mode or "").lower() == "minimized"
-                    and self.proc.pid != self.last_minimized_pid
-                ):
-                    minimize_window(self.proc.pid)
-                    self.last_minimized_pid = self.proc.pid
+                if self.proc and (self.cfg.target_window_mode or "").lower() == "minimized":
+                    self.pending_minimize_pid = self.proc.pid
+                    self.pending_minimize_at = time.time() + 0.5
 
         if self._current_pid():
             now = time.time()
@@ -2962,12 +3050,22 @@ class TargetWorker(QtCore.QObject):
                 keep_window_on_top(self._current_pid())
                 self.last_refocus = now
 
+        if self.pending_minimize_pid and (self.cfg.target_window_mode or "").lower() == "minimized":
+            if time.time() >= (self.pending_minimize_at or 0):
+                if find_window_handles_by_pid(self.pending_minimize_pid):
+                    minimize_window(self.pending_minimize_pid)
+                    self.last_minimized_pid = self.pending_minimize_pid
+                    self.pending_minimize_pid = None
+                    self.pending_minimize_at = None
+
     def _stop_proc(self):
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
         self.proc = None
         self.external_pid = None
         self.last_minimized_pid = None
+        self.pending_minimize_pid = None
+        self.pending_minimize_at = None
 
     def _proc_has_visible_window(self) -> bool:
         pid = self._current_pid()
