@@ -971,8 +971,9 @@ class UrlListDialog(QtWidgets.QDialog):
 
 
 class WarningDialog(QtWidgets.QDialog):
-    def __init__(self, message: str, palette: dict, parent=None):
+    def __init__(self, message: str, palette: dict, work_dir: str, parent=None):
         super().__init__(parent)
+        self._work_dir = work_dir
         self.setWindowTitle("비밀번호 오류")
         self.setModal(True)
         self.setFixedSize(300, 140)
@@ -1012,17 +1013,18 @@ class WarningDialog(QtWidgets.QDialog):
         super().keyPressEvent(event)
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
-        update_notice_state_counter(WORK_DIR, "ui_active", 1)
+        update_notice_state_counter(self._work_dir, "ui_active", 1)
         super().showEvent(event)
 
     def hideEvent(self, event: QtGui.QHideEvent) -> None:
-        update_notice_state_counter(WORK_DIR, "ui_active", -1)
+        update_notice_state_counter(self._work_dir, "ui_active", -1)
         super().hideEvent(event)
 
 
 class PasswordDialog(QtWidgets.QDialog):
-    def __init__(self, verifier, palette: dict, parent=None):
+    def __init__(self, verifier, palette: dict, work_dir: str, parent=None):
         super().__init__(parent)
+        self._work_dir = work_dir
         self.setWindowTitle("보안 확인")
         self.setModal(True)
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
@@ -1082,7 +1084,7 @@ class PasswordDialog(QtWidgets.QDialog):
             self.input.returnPressed.disconnect(self._accept_with_validation)
         except TypeError:
             pass
-        self._warning_dialog = WarningDialog(message, self._palette, self)
+        self._warning_dialog = WarningDialog(message, self._palette, self._work_dir, self)
         self._warning_dialog.finished.connect(self._restore_focus)
         self._warning_dialog.open()
 
@@ -1100,11 +1102,11 @@ class PasswordDialog(QtWidgets.QDialog):
         self.raise_()
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
-        update_notice_state_counter(WORK_DIR, "ui_active", 1)
+        update_notice_state_counter(self._work_dir, "ui_active", 1)
         super().showEvent(event)
 
     def hideEvent(self, event: QtGui.QHideEvent) -> None:
-        update_notice_state_counter(WORK_DIR, "ui_active", -1)
+        update_notice_state_counter(self._work_dir, "ui_active", -1)
         super().hideEvent(event)
         self.activateWindow()
         self.input.setFocus()
@@ -1159,6 +1161,33 @@ class PasswordChangeDialog(QtWidgets.QDialog):
         layout.addWidget(QtWidgets.QLabel("현재 비밀번호와 새 비밀번호를 입력하세요."))
 
         form = QtWidgets.QFormLayout()
+        form.setRowWrapPolicy(QtWidgets.QFormLayout.WrapAllRows)
+        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+        form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        form.setFormAlignment(QtCore.Qt.AlignTop)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(12)
+        form.setRowWrapPolicy(QtWidgets.QFormLayout.WrapAllRows)
+        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+        form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        form.setFormAlignment(QtCore.Qt.AlignTop)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(12)
+        form.setRowWrapPolicy(QtWidgets.QFormLayout.WrapAllRows)
+        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+        form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        form.setFormAlignment(QtCore.Qt.AlignTop)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(12)
+        form.setRowWrapPolicy(QtWidgets.QFormLayout.WrapAllRows)
+        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+        form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        form.setFormAlignment(QtCore.Qt.AlignTop)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(12)
+        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+        form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        form.setFormAlignment(QtCore.Qt.AlignTop)
         self.current_password = QtWidgets.QLineEdit()
         self.current_password.setEchoMode(QtWidgets.QLineEdit.Password)
         self.new_password = QtWidgets.QLineEdit()
@@ -1198,9 +1227,7 @@ class NoticeWindow(QtWidgets.QWidget):
         self.setWindowTitle("AutoWake 안내")
         self.palette = palette
         self.cfg = cfg
-        self._highlighted = False
         self._interaction_locked = False
-        self._event_filter_installed = False
         self._build_ui()
         self._apply_palette()
         self.update_content(cfg)
@@ -1296,42 +1323,6 @@ class NoticeWindow(QtWidgets.QWidget):
             )
         )
 
-    def _highlight_notice(self) -> None:
-        if self._highlighted:
-            return
-        self._highlighted = True
-        base_color = QtGui.QColor(self.palette["bg_card"])
-        highlight_color = base_color.lighter(115)
-        self.frame.setStyleSheet(
-            " ".join(
-                [
-                    f"background: {highlight_color.name()};",
-                    "border-radius: 16px;",
-                    "border: none;",
-                ]
-            )
-        )
-        self.close_button.setStyleSheet(
-            " ".join(
-                [
-                    "background: #fde047;",
-                    "color: #111827;",
-                    "font-weight: 900;",
-                    "border-radius: 10px;",
-                    "padding: 6px 16px;",
-                    "min-width: 120px;",
-                    "min-height: 40px;",
-                ]
-            )
-        )
-        QtCore.QTimer.singleShot(600, self._clear_highlight)
-
-    def _clear_highlight(self) -> None:
-        self._highlighted = False
-        self.close_button.setStyleSheet("")
-        self._apply_palette()
-        self._apply_frame_style()
-
     def set_interaction_lock(self, locked: bool) -> None:
         if self._preview:
             return
@@ -1340,24 +1331,15 @@ class NoticeWindow(QtWidgets.QWidget):
             self.setWindowModality(QtCore.Qt.ApplicationModal)
             if not (self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint):
                 self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
-            if not self._event_filter_installed:
-                app = QtWidgets.QApplication.instance()
-                if app:
-                    app.installEventFilter(self)
-                    self._event_filter_installed = True
         else:
             self.setWindowModality(QtCore.Qt.NonModal)
             if self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint:
                 self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowStaysOnTopHint)
-            if self._event_filter_installed:
-                app = QtWidgets.QApplication.instance()
-                if app:
-                    app.removeEventFilter(self)
-                self._event_filter_installed = False
-        if self.isVisible() and locked:
+        if self.isVisible():
             self.show()
-            self.raise_()
-            self.activateWindow()
+            if locked:
+                self.raise_()
+                self.activateWindow()
 
     def update_content(self, cfg: AppConfig) -> None:
         self.cfg = cfg
@@ -1420,8 +1402,12 @@ class NoticeWindow(QtWidgets.QWidget):
     def show_centered(self):
         screen = QtGui.QGuiApplication.primaryScreen()
         geometry = screen.availableGeometry() if screen else QtCore.QRect(0, 0, 800, 600)
-        width = int(geometry.width() * 0.4)
-        height = int(geometry.height() * 0.55)
+        self.adjustSize()
+        hint = self.sizeHint()
+        min_width = 520
+        min_height = 320
+        width = min(int(geometry.width() * 0.6), max(min_width, hint.width()))
+        height = min(int(geometry.height() * 0.8), max(min_height, hint.height()))
         self.setGeometry(
             geometry.center().x() - width // 2,
             geometry.center().y() - height // 2,
@@ -1433,17 +1419,6 @@ class NoticeWindow(QtWidgets.QWidget):
         self.activateWindow()
         self.set_interaction_lock(True)
 
-    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
-        if not self._interaction_locked:
-            super().mousePressEvent(event)
-            return
-        global_pos = event.globalPosition().toPoint()
-        if not self.geometry().contains(global_pos):
-            self._highlight_notice()
-            event.accept()
-            return
-        super().mousePressEvent(event)
-
     def hideEvent(self, event: QtGui.QHideEvent) -> None:
         self.set_interaction_lock(False)
         super().hideEvent(event)
@@ -1454,21 +1429,6 @@ class NoticeWindow(QtWidgets.QWidget):
             self.activateWindow()
         super().focusOutEvent(event)
 
-    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
-        if not self._interaction_locked or not self.isVisible():
-            return super().eventFilter(obj, event)
-        if event.type() in (QtCore.QEvent.MouseButtonPress, QtCore.QEvent.MouseButtonDblClick):
-            if isinstance(event, QtGui.QMouseEvent):
-                global_pos = event.globalPosition().toPoint()
-            else:
-                global_pos = QtGui.QCursor.pos()
-            if not self.geometry().contains(global_pos):
-                self._highlight_notice()
-                self.raise_()
-                self.activateWindow()
-                return True
-        return super().eventFilter(obj, event)
-
 
 class NoticePreviewWidget(QtWidgets.QWidget):
     def __init__(self, palette: dict, cfg: AppConfig, parent=None):
@@ -1476,7 +1436,7 @@ class NoticePreviewWidget(QtWidgets.QWidget):
         self.palette = palette
         self.cfg = cfg
         self.setObjectName("NoticePreview")
-        self._base_size = QtCore.QSize(800, 600)
+        self._base_size = QtCore.QSize(900, 680)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -1484,6 +1444,10 @@ class NoticePreviewWidget(QtWidgets.QWidget):
         self.view.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.view.setAlignment(QtCore.Qt.AlignCenter)
+        self.view.setRenderHints(
+            QtGui.QPainter.Antialiasing | QtGui.QPainter.SmoothPixmapTransform
+        )
         self.scene = QtWidgets.QGraphicsScene(self.view)
         self.view.setScene(self.scene)
         layout.addWidget(self.view)
@@ -1547,15 +1511,22 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         preview_title.setObjectName("CardTitle")
         preview_layout.addWidget(preview_title)
         self.preview = NoticePreviewWidget(self.palette, self.cfg)
-        self.preview.setMinimumWidth(360)
+        self.preview.setMinimumWidth(420)
         preview_layout.addWidget(self.preview, 1)
         layout.addWidget(preview_panel, 1)
 
         control_panel = QtWidgets.QWidget()
         control_layout = QtWidgets.QVBoxLayout(control_panel)
         control_layout.setContentsMargins(0, 0, 0, 0)
+        control_panel.setMinimumWidth(520)
 
         form = QtWidgets.QFormLayout()
+        form.setRowWrapPolicy(QtWidgets.QFormLayout.WrapAllRows)
+        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+        form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        form.setFormAlignment(QtCore.Qt.AlignTop)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(12)
         self.notice_title = QtWidgets.QLineEdit()
         form.addRow("제목", self.notice_title)
 
@@ -1701,7 +1672,11 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         button_row.addWidget(self.save_button)
         control_layout.addLayout(button_row)
 
-        layout.addWidget(control_panel, 2)
+        control_scroll = QtWidgets.QScrollArea()
+        control_scroll.setWidgetResizable(True)
+        control_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        control_scroll.setWidget(control_panel)
+        layout.addWidget(control_scroll, 2)
 
     def _connect_signals(self) -> None:
         self.notice_title.textChanged.connect(self._update_preview)
@@ -2838,6 +2813,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.showNormal()
         self.raise_()
         self.activateWindow()
+        QtCore.QTimer.singleShot(0, self._clear_window_on_top)
+
+    def _clear_window_on_top(self) -> None:
+        self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowStaysOnTopHint)
+        self.show()
 
     def _bring_dialog_to_front(self, dialog: QtWidgets.QDialog) -> None:
         dialog.setWindowFlags(dialog.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
@@ -2863,7 +2843,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self._bring_window_to_front()
             return
         self._opening_settings = True
-        self._password_dialog = PasswordDialog(self._verify_password, self.palette, self)
+        self._password_dialog = PasswordDialog(
+            self._verify_password,
+            self.palette,
+            self.cfg.work_dir,
+            self,
+        )
         self._password_dialog.finished.connect(self._handle_password_finished)
         self._password_dialog.open()
         self._bring_dialog_to_front(self._password_dialog)
@@ -2875,8 +2860,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if result == QtWidgets.QDialog.Accepted:
             self.showNormal()
             self.resize(self.minimumSize())
-            self.raise_()
-            self.activateWindow()
+            self._bring_window_to_front()
         self._password_dialog = None
         self._opening_settings = False
 

@@ -18,6 +18,8 @@ analysis = Analysis(
         (os.path.join(project_root, "assets", "default_saver.png"), "assets"),
         (os.path.join(project_root, "assets", "notice_default_1.png"), "assets"),
         (os.path.join(project_root, "assets", "notice_default_2.png"), "assets"),
+        (os.path.join(project_root, "assets", "icon.png"), "assets"),
+        (os.path.join(project_root, "assets", "logo.png"), "assets"),
     ],
     hiddenimports=[],
     hookspath=[],
