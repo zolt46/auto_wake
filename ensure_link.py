@@ -100,6 +100,18 @@ def write_notice_state(work_dir: str, **updates: float) -> None:
     os.replace(tmp_path, path)
 
 
+def update_notice_state_counter(work_dir: str, key: str, delta: int) -> None:
+    os.makedirs(work_dir, exist_ok=True)
+    state = read_notice_state(work_dir)
+    current = int(state.get(key, 0))
+    state[key] = max(0, current + delta)
+    path = notice_state_path(work_dir)
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as file:
+        json.dump(state, file, ensure_ascii=False)
+    os.replace(tmp_path, path)
+
+
 def log(msg: str) -> None:
     os.makedirs(WORK_DIR, exist_ok=True)
     path = os.path.join(WORK_DIR, "autowake.log")
@@ -563,6 +575,13 @@ def minimize_window(pid: int) -> None:
         user32.ShowWindow(hwnd, 6)
 
 
+def restore_window(pid: int) -> None:
+    handles = find_window_handles_by_pid(pid)
+    for hwnd in handles:
+        user32.ShowWindow(hwnd, 9)
+        user32.SetForegroundWindow(hwnd)
+
+
 def find_chrome_processes_by_profile(profile_dir: str) -> list[int]:
     if os.name != "nt" or not profile_dir:
         return []
@@ -930,11 +949,11 @@ class WarningDialog(QtWidgets.QDialog):
         super().keyPressEvent(event)
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
-        write_notice_state(WORK_DIR, ui_active=1.0)
+        update_notice_state_counter(WORK_DIR, "ui_active", 1)
         super().showEvent(event)
 
     def hideEvent(self, event: QtGui.QHideEvent) -> None:
-        write_notice_state(WORK_DIR, ui_active=0.0)
+        update_notice_state_counter(WORK_DIR, "ui_active", -1)
         super().hideEvent(event)
 
 
@@ -1018,11 +1037,11 @@ class PasswordDialog(QtWidgets.QDialog):
         self.raise_()
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
-        write_notice_state(WORK_DIR, ui_active=1.0)
+        update_notice_state_counter(WORK_DIR, "ui_active", 1)
         super().showEvent(event)
 
     def hideEvent(self, event: QtGui.QHideEvent) -> None:
-        write_notice_state(WORK_DIR, ui_active=0.0)
+        update_notice_state_counter(WORK_DIR, "ui_active", -1)
         super().hideEvent(event)
         self.activateWindow()
         self.input.setFocus()
@@ -1245,8 +1264,6 @@ class NoticeWindow(QtWidgets.QWidget):
         self._interaction_locked = locked
         if locked:
             self.setWindowModality(QtCore.Qt.ApplicationModal)
-            if not (self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint):
-                self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
             if not self._event_filter_installed:
                 app = QtWidgets.QApplication.instance()
                 if app:
@@ -1254,14 +1271,12 @@ class NoticeWindow(QtWidgets.QWidget):
                     self._event_filter_installed = True
         else:
             self.setWindowModality(QtCore.Qt.NonModal)
-            if self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint:
-                self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowStaysOnTopHint)
             if self._event_filter_installed:
                 app = QtWidgets.QApplication.instance()
                 if app:
                     app.removeEventFilter(self)
                 self._event_filter_installed = False
-        if self.isVisible():
+        if self.isVisible() and locked:
             self.show()
             self.raise_()
             self.activateWindow()
@@ -2626,11 +2641,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.cfg.admin_password = ""
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
-        write_notice_state(self.cfg.work_dir, ui_active=1.0)
+        update_notice_state_counter(self.cfg.work_dir, "ui_active", 1)
         super().showEvent(event)
 
     def hideEvent(self, event: QtGui.QHideEvent) -> None:
-        write_notice_state(self.cfg.work_dir, ui_active=0.0)
+        update_notice_state_counter(self.cfg.work_dir, "ui_active", -1)
         super().hideEvent(event)
 
     def _change_password(self):
@@ -3007,10 +3022,11 @@ class AudioWorker:
         self.cfg = load_config()
         self.proc: Optional[subprocess.Popen] = None
         self.external_pid: Optional[int] = None
-        self.notice_last_pid: Optional[int] = None
         self.last_minimized_pid: Optional[int] = None
         self.pending_minimize_pid: Optional[int] = None
         self.pending_minimize_at: Optional[float] = None
+        self.pending_restore_pid: Optional[int] = None
+        self.pending_restore_at: Optional[float] = None
         self.last_launch = 0.0
         self.pending_launch_at: Optional[float] = None
         self.last_config_signature: Optional[tuple] = None
@@ -3052,12 +3068,6 @@ class AudioWorker:
                     self.last_launch = time.time()
                     self.pending_launch_at = None
                     self.once_launched = True
-                    if self.external_pid != self.notice_last_pid:
-                        write_notice_state(
-                            self.cfg.work_dir,
-                            audio_launch_at=time.time(),
-                        )
-                        self.notice_last_pid = self.external_pid
                     time.sleep(self.cfg.poll_sec)
                     continue
                 if self.cfg.audio_repeat_mode == "once" and self.once_launched:
@@ -3081,15 +3091,17 @@ class AudioWorker:
                     self.last_launch = time.time()
                     self.pending_launch_at = None
                     self.once_launched = True
-                    if self.proc and self.proc.pid != self.notice_last_pid:
-                        write_notice_state(
-                            self.cfg.work_dir,
-                            audio_launch_at=time.time(),
-                        )
-                        self.notice_last_pid = self.proc.pid
                     if self.proc and (self.cfg.audio_window_mode or "").lower() == "minimized":
                         self.pending_minimize_pid = self.proc.pid
-                        self.pending_minimize_at = time.time() + 2.0
+                        self.pending_restore_pid = self.proc.pid
+                        self.pending_restore_at = time.time() + 0.8
+                        self.pending_minimize_at = time.time() + 3.0
+            if self.pending_restore_pid and (self.cfg.audio_window_mode or "").lower() == "minimized":
+                if time.time() >= (self.pending_restore_at or 0):
+                    if find_window_handles_by_pid(self.pending_restore_pid):
+                        restore_window(self.pending_restore_pid)
+                        self.pending_restore_pid = None
+                        self.pending_restore_at = None
             if self.pending_minimize_pid and (self.cfg.audio_window_mode or "").lower() == "minimized":
                 if time.time() >= (self.pending_minimize_at or 0):
                     if find_window_handles_by_pid(self.pending_minimize_pid):
@@ -3104,10 +3116,11 @@ class AudioWorker:
             self.proc.terminate()
         self.proc = None
         self.external_pid = None
-        self.notice_last_pid = None
         self.last_minimized_pid = None
         self.pending_minimize_pid = None
         self.pending_minimize_at = None
+        self.pending_restore_pid = None
+        self.pending_restore_at = None
         self.pending_launch_at = None
         self.pending_launch_at = None
 
@@ -3132,9 +3145,9 @@ class TargetWorker(QtCore.QObject):
         self.notice_dismissed = False
         self.last_notice_enabled = self.cfg.notice_enabled
         state = read_notice_state(self.cfg.work_dir)
-        self.last_audio_launch_at = float(state.get("audio_launch_at", 0.0))
-        self.last_target_launch_at = float(state.get("target_launch_at", 0.0))
-        self.notice_last_pid: Optional[int] = None
+        self.last_saver_trigger_at = float(state.get("saver_trigger_at", 0.0))
+        self.pending_notice_after_saver = False
+        self.last_interaction_lock: Optional[bool] = None
         self.once_launched = False
         self.missing_window_since: Optional[float] = None
         self.timer = QtCore.QTimer()
@@ -3175,22 +3188,30 @@ class TargetWorker(QtCore.QObject):
         self.last_notice_enabled = self.cfg.notice_enabled
 
         state = read_notice_state(self.cfg.work_dir)
-        audio_launch_at = float(state.get("audio_launch_at", 0.0))
-        target_launch_at = float(state.get("target_launch_at", 0.0))
-        ui_active = float(state.get("ui_active", 0.0)) > 0.5
-        if audio_launch_at > self.last_audio_launch_at:
+        ui_active = int(state.get("ui_active", 0)) > 0
+        saver_active = float(state.get("saver_active", 0.0)) > 0.5
+        saver_trigger_at = float(state.get("saver_trigger_at", 0.0))
+        if saver_trigger_at > self.last_saver_trigger_at:
+            self.last_saver_trigger_at = saver_trigger_at
+            self.pending_notice_after_saver = True
             self.notice_dismissed = False
-            self.last_audio_launch_at = audio_launch_at
-        if target_launch_at > self.last_target_launch_at:
-            self.notice_dismissed = False
-            self.last_target_launch_at = target_launch_at
 
-        if self.cfg.notice_enabled and not self.notice_dismissed:
+        if saver_active:
+            if self.notice.isVisible():
+                self.notice.hide()
+            self.last_interaction_lock = None
+        elif self.cfg.notice_enabled and not self.notice_dismissed:
             if not self.notice.isVisible():
                 self.notice.show_centered()
-            self.notice.set_interaction_lock(not ui_active)
+            desired_lock = not ui_active
+            if self.last_interaction_lock is None or desired_lock != self.last_interaction_lock:
+                self.notice.set_interaction_lock(desired_lock)
+                self.last_interaction_lock = desired_lock
+            if self.pending_notice_after_saver:
+                self.pending_notice_after_saver = False
         else:
             self.notice.hide()
+            self.last_interaction_lock = None
 
         if not self.cfg.target_enabled:
             self._stop_proc()
@@ -3222,11 +3243,6 @@ class TargetWorker(QtCore.QObject):
                 self.last_launch = time.time()
                 self.pending_launch_at = None
                 self.once_launched = True
-                if self.external_pid != self.notice_last_pid:
-                    now = time.time()
-                    write_notice_state(self.cfg.work_dir, target_launch_at=now)
-                    self.last_target_launch_at = now
-                    self.notice_last_pid = self.external_pid
                 return
             if self.cfg.target_repeat_mode == "once" and self.once_launched:
                 return
@@ -3252,11 +3268,6 @@ class TargetWorker(QtCore.QObject):
                 self.pending_launch_at = None
                 self.once_launched = True
                 self.missing_window_since = None
-                if self.proc and self.proc.pid != self.notice_last_pid:
-                    now = time.time()
-                    write_notice_state(self.cfg.work_dir, target_launch_at=now)
-                    self.last_target_launch_at = now
-                    self.notice_last_pid = self.proc.pid
                 if self.proc and (self.cfg.target_window_mode or "").lower() == "minimized":
                     self.pending_minimize_pid = self.proc.pid
                     self.pending_minimize_at = time.time() + 0.5
@@ -3287,7 +3298,6 @@ class TargetWorker(QtCore.QObject):
         self.last_minimized_pid = None
         self.pending_minimize_pid = None
         self.pending_minimize_at = None
-        self.notice_last_pid = None
 
     def _proc_has_visible_window(self) -> bool:
         pid = self._current_pid()
@@ -3312,6 +3322,7 @@ class SaverWorker(QtCore.QObject):
         self.timer.timeout.connect(self._tick)
         self.timer.start(int(max(self.cfg.poll_sec, 0.2) * 1000))
         self.started_at = time.time()
+        self.saver_visible = False
 
     def _tick(self):
         self.cfg = load_config()
@@ -3322,16 +3333,29 @@ class SaverWorker(QtCore.QObject):
             self.window.palette = self.palette
         self.window.cfg = self.cfg
         if not self.cfg.saver_enabled:
+            if self.saver_visible:
+                self.saver_visible = False
+                write_notice_state(self.cfg.work_dir, saver_active=0.0)
             self.window.hide()
             return
         if time.time() - self.started_at < self.cfg.saver_start_delay_sec:
             return
         idle = seconds_since_last_input()
         if idle <= self.cfg.active_threshold_sec:
+            if self.saver_visible:
+                self.saver_visible = False
+                write_notice_state(self.cfg.work_dir, saver_active=0.0)
             self.window.hide()
         elif idle >= self.cfg.idle_to_show_sec:
             if not self.window.isVisible():
                 self.window.show_fullscreen()
+                if not self.saver_visible:
+                    self.saver_visible = True
+                    write_notice_state(
+                        self.cfg.work_dir,
+                        saver_active=1.0,
+                        saver_trigger_at=time.time(),
+                    )
         if self.window.isVisible():
             self.window.refresh()
 
