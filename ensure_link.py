@@ -740,6 +740,7 @@ class PasswordDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("보안 확인")
         self.setModal(True)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
         self.setFixedSize(320, 180)
         self._verifier = verifier
         self._palette = palette
@@ -834,6 +835,9 @@ class PasswordDialog(QtWidgets.QDialog):
             self.input.clear()
             self.input.selectAll()
             self.input.setFocus()
+            self.show()
+            self.raise_()
+            self.activateWindow()
             return
         self.accept()
 
