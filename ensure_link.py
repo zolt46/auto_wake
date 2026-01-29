@@ -1436,7 +1436,7 @@ class NoticePreviewWidget(QtWidgets.QWidget):
         self.palette = palette
         self.cfg = cfg
         self.setObjectName("NoticePreview")
-        self._base_size = QtCore.QSize(900, 680)
+        self._base_size = QtCore.QSize(640, 420)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -1448,6 +1448,7 @@ class NoticePreviewWidget(QtWidgets.QWidget):
         self.view.setRenderHints(
             QtGui.QPainter.Antialiasing | QtGui.QPainter.SmoothPixmapTransform
         )
+        self.view.setViewportMargins(8, 8, 8, 8)
         self.scene = QtWidgets.QGraphicsScene(self.view)
         self.view.setScene(self.scene)
         layout.addWidget(self.view)
@@ -1485,9 +1486,13 @@ class NoticePreviewWidget(QtWidgets.QWidget):
     def _sync_scale(self) -> None:
         if not self.proxy:
             return
-        self.scene.setSceneRect(self.proxy.boundingRect())
+        rect = self.scene.itemsBoundingRect()
+        if rect.isNull():
+            return
+        rect.adjust(-8, -8, 8, 8)
+        self.scene.setSceneRect(rect)
         self.view.resetTransform()
-        self.view.fitInView(self.proxy, QtCore.Qt.KeepAspectRatio)
+        self.view.fitInView(rect, QtCore.Qt.KeepAspectRatio)
 
 
 class NoticeConfigDialog(QtWidgets.QDialog):
@@ -1495,7 +1500,7 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("안내 팝업 구성")
         self.setModal(True)
-        self.setMinimumSize(980, 620)
+        self.setMinimumSize(1120, 720)
         self.palette = palette
         self.cfg = cfg
         self._build_ui()
@@ -1504,42 +1509,47 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self._update_preview()
 
     def _build_ui(self) -> None:
-        layout = QtWidgets.QHBoxLayout(self)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter.setChildrenCollapsible(False)
+        layout.addWidget(splitter, 1)
+
         preview_panel = QtWidgets.QWidget()
         preview_layout = QtWidgets.QVBoxLayout(preview_panel)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(12)
         preview_title = QtWidgets.QLabel("안내 팝업 미리보기")
         preview_title.setObjectName("CardTitle")
         preview_layout.addWidget(preview_title)
         self.preview = NoticePreviewWidget(self.palette, self.cfg)
-        self.preview.setMinimumWidth(420)
+        self.preview.setMinimumWidth(460)
         preview_layout.addWidget(self.preview, 1)
-        layout.addWidget(preview_panel, 1)
-
         control_panel = QtWidgets.QWidget()
         control_layout = QtWidgets.QVBoxLayout(control_panel)
-        control_layout.setContentsMargins(0, 0, 0, 0)
-        control_panel.setMinimumWidth(520)
+        control_layout.setContentsMargins(12, 12, 12, 12)
+        control_layout.setSpacing(16)
 
-        form = QtWidgets.QFormLayout()
-        form.setRowWrapPolicy(QtWidgets.QFormLayout.WrapAllRows)
-        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
-        form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.setFormAlignment(QtCore.Qt.AlignTop)
-        form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(12)
+        general_group = QtWidgets.QGroupBox("기본 설정")
+        general_layout = QtWidgets.QFormLayout(general_group)
+        general_layout.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+        general_layout.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        general_layout.setHorizontalSpacing(12)
+        general_layout.setVerticalSpacing(10)
         self.notice_title = QtWidgets.QLineEdit()
-        form.addRow("제목", self.notice_title)
+        general_layout.addRow("제목", self.notice_title)
 
         self.image_mode = QtWidgets.QComboBox()
         self.image_mode.addItem("기본 이미지", "bundled")
         self.image_mode.addItem("사용자 지정", "path")
         self.image_mode.addItem("없음", "none")
-        form.addRow("상단 삽입 이미지", self.image_mode)
+        general_layout.addRow("상단 삽입 이미지", self.image_mode)
 
         self.bundled_image = QtWidgets.QComboBox()
         for name in NOTICE_BUNDLED_IMAGES:
             self.bundled_image.addItem(NOTICE_BUNDLED_LABELS.get(name, name), name)
-        form.addRow("기본 이미지 선택", self.bundled_image)
+        general_layout.addRow("기본 이미지 선택", self.bundled_image)
 
         path_row = QtWidgets.QWidget()
         path_layout = QtWidgets.QHBoxLayout(path_row)
@@ -1549,18 +1559,23 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.image_path_browse.clicked.connect(self._browse_image)
         path_layout.addWidget(self.image_path)
         path_layout.addWidget(self.image_path_browse)
-        form.addRow("이미지 경로", path_row)
+        general_layout.addRow("이미지 경로", path_row)
 
         self.image_height = StepperInput()
         self.image_height.setRange(20, 400)
         self.image_height.setSingleStep(5)
         self.image_height.setDecimals(0)
-        form.addRow("이미지 높이(px)", self.image_height)
+        general_layout.addRow("이미지 높이(px)", self.image_height)
 
+        control_layout.addWidget(general_group)
+
+        body_group = QtWidgets.QGroupBox("본문")
+        body_layout = QtWidgets.QVBoxLayout(body_group)
+        body_layout.setSpacing(10)
         self.body_text = QtWidgets.QTextEdit()
         self.body_text.setMinimumHeight(120)
-        form.addRow("본문 내용", self.body_text)
-        body_row = QtWidgets.QHBoxLayout()
+        body_layout.addWidget(self.body_text)
+        body_row = QtWidgets.QGridLayout()
         self.body_font_size = StepperInput()
         self.body_font_size.setRange(9, 28)
         self.body_font_size.setSingleStep(1)
@@ -1577,22 +1592,24 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         font_row = QtWidgets.QHBoxLayout()
         font_row.addWidget(QtWidgets.QLabel("글씨체"))
         font_row.addWidget(self.body_font_family)
-        form.addRow("", font_row)
-        body_row.addWidget(QtWidgets.QLabel("글씨 크기"))
-        body_row.addWidget(self.body_font_size)
-        body_row.addSpacing(12)
-        body_row.addWidget(self.body_bold)
-        body_row.addWidget(self.body_italic)
-        body_row.addSpacing(12)
-        body_row.addWidget(QtWidgets.QLabel("정렬"))
-        body_row.addWidget(self.body_align)
-        body_row.addStretch()
-        form.addRow("", body_row)
+        body_row.addWidget(QtWidgets.QLabel("글씨 크기"), 0, 0)
+        body_row.addWidget(self.body_font_size, 0, 1)
+        body_row.addWidget(self.body_bold, 0, 2)
+        body_row.addWidget(self.body_italic, 0, 3)
+        body_row.addWidget(QtWidgets.QLabel("정렬"), 0, 4)
+        body_row.addWidget(self.body_align, 0, 5)
+        body_row.setColumnStretch(6, 1)
+        body_layout.addLayout(body_row)
+        body_layout.addLayout(font_row)
+        control_layout.addWidget(body_group)
 
+        footer_group = QtWidgets.QGroupBox("추가 내용")
+        footer_layout = QtWidgets.QVBoxLayout(footer_group)
+        footer_layout.setSpacing(10)
         self.footer_text = QtWidgets.QTextEdit()
         self.footer_text.setMinimumHeight(120)
-        form.addRow("추가 내용", self.footer_text)
-        footer_row = QtWidgets.QHBoxLayout()
+        footer_layout.addWidget(self.footer_text)
+        footer_row = QtWidgets.QGridLayout()
         self.footer_font_size = StepperInput()
         self.footer_font_size.setRange(9, 24)
         self.footer_font_size.setSingleStep(1)
@@ -1609,18 +1626,20 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         footer_font_row = QtWidgets.QHBoxLayout()
         footer_font_row.addWidget(QtWidgets.QLabel("글씨체"))
         footer_font_row.addWidget(self.footer_font_family)
-        form.addRow("", footer_font_row)
-        footer_row.addWidget(QtWidgets.QLabel("글씨 크기"))
-        footer_row.addWidget(self.footer_font_size)
-        footer_row.addSpacing(12)
-        footer_row.addWidget(self.footer_bold)
-        footer_row.addWidget(self.footer_italic)
-        footer_row.addSpacing(12)
-        footer_row.addWidget(QtWidgets.QLabel("정렬"))
-        footer_row.addWidget(self.footer_align)
-        footer_row.addStretch()
-        form.addRow("", footer_row)
+        footer_row.addWidget(QtWidgets.QLabel("글씨 크기"), 0, 0)
+        footer_row.addWidget(self.footer_font_size, 0, 1)
+        footer_row.addWidget(self.footer_bold, 0, 2)
+        footer_row.addWidget(self.footer_italic, 0, 3)
+        footer_row.addWidget(QtWidgets.QLabel("정렬"), 0, 4)
+        footer_row.addWidget(self.footer_align, 0, 5)
+        footer_row.setColumnStretch(6, 1)
+        footer_layout.addLayout(footer_row)
+        footer_layout.addLayout(footer_font_row)
+        control_layout.addWidget(footer_group)
 
+        frame_group = QtWidgets.QGroupBox("프레임/재노출")
+        frame_layout = QtWidgets.QVBoxLayout(frame_group)
+        frame_layout.setSpacing(10)
         frame_row = QtWidgets.QHBoxLayout()
         self.frame_color_button = QtWidgets.QPushButton("여백 색상")
         self.frame_color_button.clicked.connect(self._pick_frame_color)
@@ -1633,7 +1652,7 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         frame_row.addWidget(QtWidgets.QLabel("여백 폭"))
         frame_row.addWidget(self.frame_padding)
         frame_row.addStretch()
-        form.addRow("", frame_row)
+        frame_layout.addLayout(frame_row)
 
         repeat_row = QtWidgets.QHBoxLayout()
         self.notice_repeat_enabled = QtWidgets.QCheckBox("닫힌 후 재노출")
@@ -1646,14 +1665,15 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         repeat_row.addWidget(QtWidgets.QLabel("경과 시간(분)"))
         repeat_row.addWidget(self.notice_repeat_interval)
         repeat_row.addStretch()
-        form.addRow("", repeat_row)
+        frame_layout.addLayout(repeat_row)
         self.notice_repeat_hint = QtWidgets.QLabel(
             "스크린 세이버 사용 시 재노출 옵션은 비활성화됩니다."
         )
         self.notice_repeat_hint.setObjectName("CardSubtitle")
-        form.addRow("", self.notice_repeat_hint)
+        self.notice_repeat_hint.setWordWrap(True)
+        frame_layout.addWidget(self.notice_repeat_hint)
 
-        control_layout.addLayout(form)
+        control_layout.addWidget(frame_group)
         control_layout.addStretch()
 
         button_row = QtWidgets.QHBoxLayout()
@@ -1670,13 +1690,22 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         button_row.addStretch()
         button_row.addWidget(self.cancel_button)
         button_row.addWidget(self.save_button)
-        control_layout.addLayout(button_row)
 
         control_scroll = QtWidgets.QScrollArea()
         control_scroll.setWidgetResizable(True)
         control_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
         control_scroll.setWidget(control_panel)
-        layout.addWidget(control_scroll, 2)
+        controls_wrapper = QtWidgets.QWidget()
+        controls_layout = QtWidgets.QVBoxLayout(controls_wrapper)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(12)
+        controls_layout.addWidget(control_scroll, 1)
+        controls_layout.addLayout(button_row)
+        controls_wrapper.setMinimumWidth(520)
+        splitter.addWidget(controls_wrapper)
+        splitter.addWidget(preview_panel)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
 
     def _connect_signals(self) -> None:
         self.notice_title.textChanged.connect(self._update_preview)
@@ -2325,6 +2354,7 @@ class MainWindow(QtWidgets.QMainWindow):
         top_layout.addLayout(title_box)
         logo_label = QtWidgets.QLabel()
         logo_label.setObjectName("TopLogo")
+        logo_label.setContentsMargins(14, 0, 2, 0)
         logo_path = resource_path(APP_LOGO_PATH)
         if os.path.exists(logo_path):
             logo_pixmap = QtGui.QPixmap(logo_path)
@@ -2696,6 +2726,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def showEvent(self, event: QtGui.QShowEvent) -> None:
         update_notice_state_counter(self.cfg.work_dir, "ui_active", 1)
         super().showEvent(event)
+        QtCore.QTimer.singleShot(0, self._bring_window_to_front)
 
     def hideEvent(self, event: QtGui.QHideEvent) -> None:
         update_notice_state_counter(self.cfg.work_dir, "ui_active", -1)
@@ -3247,6 +3278,8 @@ class TargetWorker(QtCore.QObject):
         self.last_saver_trigger_at = float(state.get("saver_trigger_at", 0.0))
         self.pending_notice_after_saver = False
         self.last_interaction_lock: Optional[bool] = None
+        self.last_saver_active = False
+        self.saver_release_hold_until = 0.0
         self.once_launched = False
         self.missing_window_since: Optional[float] = None
         self.timer = QtCore.QTimer()
@@ -3290,6 +3323,10 @@ class TargetWorker(QtCore.QObject):
         state = read_notice_state(self.cfg.work_dir)
         ui_active = int(state.get("ui_active", 0)) > 0
         saver_active = float(state.get("saver_active", 0.0)) > 0.5
+        if saver_active != self.last_saver_active:
+            self.last_saver_active = saver_active
+            if not saver_active:
+                self.saver_release_hold_until = time.time() + 0.8
         saver_trigger_at = float(state.get("saver_trigger_at", 0.0))
         if saver_trigger_at > self.last_saver_trigger_at:
             self.last_saver_trigger_at = saver_trigger_at
@@ -3308,11 +3345,12 @@ class TargetWorker(QtCore.QObject):
             if time.time() - dismissed_at >= interval_sec:
                 self.notice_dismissed = False
 
+        hold_notice = time.time() < self.saver_release_hold_until
         if saver_active:
             if self.notice.isVisible():
                 self.notice.hide()
             self.last_interaction_lock = None
-        elif self.cfg.notice_enabled and not self.notice_dismissed:
+        elif self.cfg.notice_enabled and not self.notice_dismissed and not hold_notice:
             if not self.notice.isVisible():
                 self.notice.show_centered()
                 now = time.time()
@@ -3328,7 +3366,8 @@ class TargetWorker(QtCore.QObject):
             if self.pending_notice_after_saver:
                 self.pending_notice_after_saver = False
         else:
-            self.notice.hide()
+            if self.notice.isVisible():
+                self.notice.hide()
             self.last_interaction_lock = None
 
         if not self.cfg.target_enabled:
