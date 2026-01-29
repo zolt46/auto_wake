@@ -151,8 +151,14 @@ class AppConfig:
     notice_footer: str = DEFAULT_NOTICE_FOOTER
     notice_body_font_size: int = 13
     notice_body_bold: bool = False
+    notice_body_italic: bool = False
+    notice_body_align: str = "left"
+    notice_body_font_family: str = "Noto Sans KR"
     notice_footer_font_size: int = 12
     notice_footer_bold: bool = False
+    notice_footer_italic: bool = False
+    notice_footer_align: str = "left"
+    notice_footer_font_family: str = "Noto Sans KR"
     notice_image_mode: str = DEFAULT_NOTICE_IMAGE_MODE
     notice_image_path: str = DEFAULT_NOTICE_IMAGE_PATH
     notice_bundled_image: str = DEFAULT_NOTICE_BUNDLED_IMAGE
@@ -223,8 +229,14 @@ class AppConfig:
             notice_footer=str(data.get("notice_footer", DEFAULT_NOTICE_FOOTER)),
             notice_body_font_size=int(data.get("notice_body_font_size", 13)),
             notice_body_bold=bool(data.get("notice_body_bold", False)),
+            notice_body_italic=bool(data.get("notice_body_italic", False)),
+            notice_body_align=str(data.get("notice_body_align", "left")),
+            notice_body_font_family=str(data.get("notice_body_font_family", "Noto Sans KR")),
             notice_footer_font_size=int(data.get("notice_footer_font_size", 12)),
             notice_footer_bold=bool(data.get("notice_footer_bold", False)),
+            notice_footer_italic=bool(data.get("notice_footer_italic", False)),
+            notice_footer_align=str(data.get("notice_footer_align", "left")),
+            notice_footer_font_family=str(data.get("notice_footer_font_family", "Noto Sans KR")),
             notice_image_mode=str(data.get("notice_image_mode", DEFAULT_NOTICE_IMAGE_MODE)),
             notice_image_path=str(data.get("notice_image_path", DEFAULT_NOTICE_IMAGE_PATH)),
             notice_bundled_image=str(
@@ -514,10 +526,14 @@ def find_chrome_processes_by_profile(profile_dir: str) -> list[int]:
     try:
         escaped = profile_dir.replace("\\", "\\\\")
         query = f"CommandLine like '%--user-data-dir={escaped}%'"
+        creationflags = (
+            subprocess.CREATE_NO_WINDOW if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+        )
         output = subprocess.check_output(
             ["wmic", "process", "where", query, "get", "ProcessId,CommandLine", "/format:csv"],
             text=True,
             stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
         )
     except Exception:
         return []
@@ -540,6 +556,22 @@ def _normalize_notice_text(value: str, fallback: str) -> str:
     if value.strip() == "":
         return fallback
     return value
+
+
+def _notice_alignment(value: str) -> QtCore.Qt.Alignment:
+    mapping = {
+        "left": QtCore.Qt.AlignLeft,
+        "center": QtCore.Qt.AlignHCenter,
+        "right": QtCore.Qt.AlignRight,
+    }
+    return mapping.get(value, QtCore.Qt.AlignLeft) | QtCore.Qt.AlignTop
+
+
+def _build_notice_font(family: str, size: int, bold: bool, italic: bool) -> QtGui.QFont:
+    font = QtGui.QFont(family or "Noto Sans KR", int(size))
+    font.setBold(bool(bold))
+    font.setItalic(bool(italic))
+    return font
 
 
 def build_notice_content(cfg: AppConfig) -> tuple[str, str, str]:
@@ -1075,12 +1107,22 @@ class NoticeWindow(QtWidgets.QWidget):
         self.footer_label.setTextFormat(QtCore.Qt.PlainText)
         self.body_label.setText(body)
         self.footer_label.setText(footer)
-        body_font = QtGui.QFont("Noto Sans KR", int(cfg.notice_body_font_size))
-        body_font.setBold(bool(cfg.notice_body_bold))
-        footer_font = QtGui.QFont("Noto Sans KR", int(cfg.notice_footer_font_size))
-        footer_font.setBold(bool(cfg.notice_footer_bold))
+        body_font = _build_notice_font(
+            cfg.notice_body_font_family,
+            cfg.notice_body_font_size,
+            cfg.notice_body_bold,
+            cfg.notice_body_italic,
+        )
+        footer_font = _build_notice_font(
+            cfg.notice_footer_font_family,
+            cfg.notice_footer_font_size,
+            cfg.notice_footer_bold,
+            cfg.notice_footer_italic,
+        )
         self.body_label.setFont(body_font)
         self.footer_label.setFont(footer_font)
+        self.body_label.setAlignment(_notice_alignment(cfg.notice_body_align))
+        self.footer_label.setAlignment(_notice_alignment(cfg.notice_footer_align))
         self._update_image()
 
     def _update_image(self) -> None:
@@ -1178,12 +1220,22 @@ class NoticePreviewWidget(QtWidgets.QFrame):
         self.footer_label.setTextFormat(QtCore.Qt.PlainText)
         self.body_label.setText(body)
         self.footer_label.setText(footer)
-        body_font = QtGui.QFont("Noto Sans KR", int(cfg.notice_body_font_size))
-        body_font.setBold(bool(cfg.notice_body_bold))
-        footer_font = QtGui.QFont("Noto Sans KR", int(cfg.notice_footer_font_size))
-        footer_font.setBold(bool(cfg.notice_footer_bold))
+        body_font = _build_notice_font(
+            cfg.notice_body_font_family,
+            cfg.notice_body_font_size,
+            cfg.notice_body_bold,
+            cfg.notice_body_italic,
+        )
+        footer_font = _build_notice_font(
+            cfg.notice_footer_font_family,
+            cfg.notice_footer_font_size,
+            cfg.notice_footer_bold,
+            cfg.notice_footer_italic,
+        )
         self.body_label.setFont(body_font)
         self.footer_label.setFont(footer_font)
+        self.body_label.setAlignment(_notice_alignment(cfg.notice_body_align))
+        self.footer_label.setAlignment(_notice_alignment(cfg.notice_footer_align))
         self._update_image()
 
     def _update_image(self) -> None:
@@ -1272,10 +1324,24 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.body_font_size.setRange(9, 28)
         self.body_font_size.setSingleStep(1)
         self.body_bold = QtWidgets.QCheckBox("굵게")
+        self.body_italic = QtWidgets.QCheckBox("기울임")
+        self.body_font_family = QtWidgets.QFontComboBox()
+        self.body_align = QtWidgets.QComboBox()
+        self.body_align.addItem("왼쪽", "left")
+        self.body_align.addItem("가운데", "center")
+        self.body_align.addItem("오른쪽", "right")
+        font_row = QtWidgets.QHBoxLayout()
+        font_row.addWidget(QtWidgets.QLabel("글씨체"))
+        font_row.addWidget(self.body_font_family)
+        form.addRow("", font_row)
         body_row.addWidget(QtWidgets.QLabel("글씨 크기"))
         body_row.addWidget(self.body_font_size)
         body_row.addSpacing(12)
         body_row.addWidget(self.body_bold)
+        body_row.addWidget(self.body_italic)
+        body_row.addSpacing(12)
+        body_row.addWidget(QtWidgets.QLabel("정렬"))
+        body_row.addWidget(self.body_align)
         body_row.addStretch()
         form.addRow("", body_row)
 
@@ -1287,10 +1353,24 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.footer_font_size.setRange(9, 24)
         self.footer_font_size.setSingleStep(1)
         self.footer_bold = QtWidgets.QCheckBox("굵게")
+        self.footer_italic = QtWidgets.QCheckBox("기울임")
+        self.footer_font_family = QtWidgets.QFontComboBox()
+        self.footer_align = QtWidgets.QComboBox()
+        self.footer_align.addItem("왼쪽", "left")
+        self.footer_align.addItem("가운데", "center")
+        self.footer_align.addItem("오른쪽", "right")
+        footer_font_row = QtWidgets.QHBoxLayout()
+        footer_font_row.addWidget(QtWidgets.QLabel("글씨체"))
+        footer_font_row.addWidget(self.footer_font_family)
+        form.addRow("", footer_font_row)
         footer_row.addWidget(QtWidgets.QLabel("글씨 크기"))
         footer_row.addWidget(self.footer_font_size)
         footer_row.addSpacing(12)
         footer_row.addWidget(self.footer_bold)
+        footer_row.addWidget(self.footer_italic)
+        footer_row.addSpacing(12)
+        footer_row.addWidget(QtWidgets.QLabel("정렬"))
+        footer_row.addWidget(self.footer_align)
         footer_row.addStretch()
         form.addRow("", footer_row)
 
@@ -1324,9 +1404,15 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.body_text.textChanged.connect(self._update_preview)
         self.body_font_size.valueChanged.connect(self._update_preview)
         self.body_bold.stateChanged.connect(self._update_preview)
+        self.body_italic.stateChanged.connect(self._update_preview)
+        self.body_font_family.currentFontChanged.connect(lambda _font: self._update_preview())
+        self.body_align.currentIndexChanged.connect(self._update_preview)
         self.footer_text.textChanged.connect(self._update_preview)
         self.footer_font_size.valueChanged.connect(self._update_preview)
         self.footer_bold.stateChanged.connect(self._update_preview)
+        self.footer_italic.stateChanged.connect(self._update_preview)
+        self.footer_font_family.currentFontChanged.connect(lambda _font: self._update_preview())
+        self.footer_align.currentIndexChanged.connect(self._update_preview)
 
     def _load_config(self, cfg: AppConfig) -> None:
         self.notice_title.setText(cfg.notice_title)
@@ -1342,9 +1428,19 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.body_text.setPlainText(cfg.notice_body)
         self.body_font_size.setValue(int(cfg.notice_body_font_size))
         self.body_bold.setChecked(bool(cfg.notice_body_bold))
+        self.body_italic.setChecked(bool(cfg.notice_body_italic))
+        self.body_font_family.setCurrentFont(QtGui.QFont(cfg.notice_body_font_family))
+        body_align_index = self.body_align.findData(cfg.notice_body_align)
+        if body_align_index >= 0:
+            self.body_align.setCurrentIndex(body_align_index)
         self.footer_text.setPlainText(cfg.notice_footer)
         self.footer_font_size.setValue(int(cfg.notice_footer_font_size))
         self.footer_bold.setChecked(bool(cfg.notice_footer_bold))
+        self.footer_italic.setChecked(bool(cfg.notice_footer_italic))
+        self.footer_font_family.setCurrentFont(QtGui.QFont(cfg.notice_footer_font_family))
+        footer_align_index = self.footer_align.findData(cfg.notice_footer_align)
+        if footer_align_index >= 0:
+            self.footer_align.setCurrentIndex(footer_align_index)
         self._handle_image_mode()
 
     def _handle_image_mode(self) -> None:
@@ -1404,8 +1500,14 @@ class NoticeConfigDialog(QtWidgets.QDialog):
             notice_footer=str(data.get("notice_footer", DEFAULT_NOTICE_FOOTER)),
             notice_body_font_size=int(data.get("notice_body_font_size", 13)),
             notice_body_bold=bool(data.get("notice_body_bold", False)),
+            notice_body_italic=bool(data.get("notice_body_italic", False)),
+            notice_body_align=str(data.get("notice_body_align", "left")),
+            notice_body_font_family=str(data.get("notice_body_font_family", "Noto Sans KR")),
             notice_footer_font_size=int(data.get("notice_footer_font_size", 12)),
             notice_footer_bold=bool(data.get("notice_footer_bold", False)),
+            notice_footer_italic=bool(data.get("notice_footer_italic", False)),
+            notice_footer_align=str(data.get("notice_footer_align", "left")),
+            notice_footer_font_family=str(data.get("notice_footer_font_family", "Noto Sans KR")),
             notice_image_mode=str(data.get("notice_image_mode", DEFAULT_NOTICE_IMAGE_MODE)),
             notice_image_path=str(data.get("notice_image_path", DEFAULT_NOTICE_IMAGE_PATH)),
             notice_bundled_image=str(
@@ -1426,8 +1528,14 @@ class NoticeConfigDialog(QtWidgets.QDialog):
             ),
             "notice_body_font_size": int(self.body_font_size.value()),
             "notice_body_bold": bool(self.body_bold.isChecked()),
+            "notice_body_italic": bool(self.body_italic.isChecked()),
+            "notice_body_align": str(self.body_align.currentData()),
+            "notice_body_font_family": self.body_font_family.currentFont().family(),
             "notice_footer_font_size": int(self.footer_font_size.value()),
             "notice_footer_bold": bool(self.footer_bold.isChecked()),
+            "notice_footer_italic": bool(self.footer_italic.isChecked()),
+            "notice_footer_align": str(self.footer_align.currentData()),
+            "notice_footer_font_family": self.footer_font_family.currentFont().family(),
             "notice_image_mode": str(self.image_mode.currentData()),
             "notice_image_path": self.image_path.text().strip(),
             "notice_bundled_image": str(self.bundled_image.currentData()),
@@ -1443,8 +1551,14 @@ class NoticeConfigDialog(QtWidgets.QDialog):
             notice_footer=config["notice_footer"],
             notice_body_font_size=config["notice_body_font_size"],
             notice_body_bold=config["notice_body_bold"],
+            notice_body_italic=config["notice_body_italic"],
+            notice_body_align=config["notice_body_align"],
+            notice_body_font_family=config["notice_body_font_family"],
             notice_footer_font_size=config["notice_footer_font_size"],
             notice_footer_bold=config["notice_footer_bold"],
+            notice_footer_italic=config["notice_footer_italic"],
+            notice_footer_align=config["notice_footer_align"],
+            notice_footer_font_family=config["notice_footer_font_family"],
             notice_image_mode=config["notice_image_mode"],
             notice_image_path=config["notice_image_path"],
             notice_bundled_image=config["notice_bundled_image"],
@@ -1553,7 +1667,15 @@ class ProcessManager:
             args = [sys.executable, "--mode", mode]
         else:
             args = [sys.executable, os.path.abspath(__file__), "--mode", mode]
-        proc = subprocess.Popen(args)
+        creationflags = (
+            subprocess.CREATE_NO_WINDOW if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+        )
+        proc = subprocess.Popen(
+            args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+        )
         self.processes[mode] = proc
         log(f"Spawned worker: {mode} ({' '.join(args)})")
 
@@ -2153,8 +2275,14 @@ class MainWindow(QtWidgets.QMainWindow):
             "notice_footer": cfg.notice_footer,
             "notice_body_font_size": cfg.notice_body_font_size,
             "notice_body_bold": cfg.notice_body_bold,
+            "notice_body_italic": cfg.notice_body_italic,
+            "notice_body_align": cfg.notice_body_align,
+            "notice_body_font_family": cfg.notice_body_font_family,
             "notice_footer_font_size": cfg.notice_footer_font_size,
             "notice_footer_bold": cfg.notice_footer_bold,
+            "notice_footer_italic": cfg.notice_footer_italic,
+            "notice_footer_align": cfg.notice_footer_align,
+            "notice_footer_font_family": cfg.notice_footer_font_family,
             "notice_image_mode": cfg.notice_image_mode,
             "notice_image_path": cfg.notice_image_path,
             "notice_bundled_image": cfg.notice_bundled_image,
@@ -2459,11 +2587,29 @@ class MainWindow(QtWidgets.QMainWindow):
             notice_body_bold=bool(
                 notice_config.get("notice_body_bold", self.cfg.notice_body_bold)
             ),
+            notice_body_italic=bool(
+                notice_config.get("notice_body_italic", self.cfg.notice_body_italic)
+            ),
+            notice_body_align=str(
+                notice_config.get("notice_body_align", self.cfg.notice_body_align)
+            ),
+            notice_body_font_family=str(
+                notice_config.get("notice_body_font_family", self.cfg.notice_body_font_family)
+            ),
             notice_footer_font_size=int(
                 notice_config.get("notice_footer_font_size", self.cfg.notice_footer_font_size)
             ),
             notice_footer_bold=bool(
                 notice_config.get("notice_footer_bold", self.cfg.notice_footer_bold)
+            ),
+            notice_footer_italic=bool(
+                notice_config.get("notice_footer_italic", self.cfg.notice_footer_italic)
+            ),
+            notice_footer_align=str(
+                notice_config.get("notice_footer_align", self.cfg.notice_footer_align)
+            ),
+            notice_footer_font_family=str(
+                notice_config.get("notice_footer_font_family", self.cfg.notice_footer_font_family)
             ),
             notice_image_mode=str(
                 notice_config.get("notice_image_mode", self.cfg.notice_image_mode)
@@ -2786,11 +2932,6 @@ class TargetWorker(QtCore.QObject):
         if self.proc and self.proc.poll() is None:
             return self.proc.pid
         return self.external_pid
-
-    def _proc_has_visible_window(self) -> bool:
-        if not self.proc or self.proc.poll() is not None:
-            return False
-        return bool(find_window_handles_by_pid(self.proc.pid))
 
 
 class SaverWorker(QtCore.QObject):
