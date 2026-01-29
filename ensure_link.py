@@ -1057,6 +1057,7 @@ class NoticeWindow(QtWidgets.QWidget):
 
     def __init__(self, palette: dict, cfg: AppConfig, parent=None):
         super().__init__(parent)
+        self.setObjectName("NoticeWindow")
         self.setWindowFlags(
             QtCore.Qt.Window | QtCore.Qt.WindowTitleHint | QtCore.Qt.WindowStaysOnTopHint
         )
@@ -1104,8 +1105,12 @@ class NoticeWindow(QtWidgets.QWidget):
 
     def _apply_palette(self) -> None:
         palette = self.palette
+        frame_color = self.cfg.notice_frame_color or "#0f172a"
         self.setStyleSheet(
             f"""
+            #NoticeWindow {{
+                background: {frame_color};
+            }}
             #NoticeFrame {{
                 background: {palette['bg_card']};
                 border-radius: 16px;
@@ -1143,7 +1148,7 @@ class NoticeWindow(QtWidgets.QWidget):
         if outer_layout is not None:
             padding = max(0, int(cfg.notice_frame_padding))
             outer_layout.setContentsMargins(padding, padding, padding, padding)
-        self.setStyleSheet(f"background: {cfg.notice_frame_color};")
+        self._apply_palette()
         title, body, footer = build_notice_content(cfg)
         self.title_label.setText(title)
         self.body_label.setTextFormat(QtCore.Qt.PlainText)
@@ -1242,7 +1247,7 @@ class NoticePreviewWidget(QtWidgets.QFrame):
             #NoticePreview {{
                 background: {palette['bg_card']};
                 border-radius: 14px;
-                border: 1px solid {palette['border']};
+                border: none;
             }}
             #NoticePreviewTitle {{
                 color: {palette['text_primary']};
@@ -1260,15 +1265,7 @@ class NoticePreviewWidget(QtWidgets.QFrame):
         self._apply_frame_style()
 
     def _apply_frame_style(self) -> None:
-        self.setStyleSheet(
-            " ".join(
-                [
-                    f"background: {self.palette['bg_card']};",
-                    "border-radius: 14px;",
-                    f"border: 1px solid {self.palette['border']};",
-                ]
-            )
-        )
+        return
 
     def apply_config(self, cfg: AppConfig) -> None:
         self.cfg = cfg
@@ -2567,6 +2564,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_stop.setEnabled(self.is_running)
 
     def _bring_window_to_front(self) -> None:
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
         self.showNormal()
         self.raise_()
         self.activateWindow()
@@ -2806,7 +2804,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         if cfg.audio_enabled:
             self.process_manager.start("audio")
-        if cfg.target_enabled:
+        if cfg.target_enabled or cfg.notice_enabled:
             self.process_manager.start("target")
         if cfg.saver_enabled:
             self.process_manager.start("saver")
