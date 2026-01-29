@@ -3088,7 +3088,7 @@ class AudioWorker:
                     launch_mode = self.cfg.audio_window_mode
                     if (launch_mode or "").lower() == "minimized":
                         launch_mode = "normal"
-                    self.proc = launch_chrome([url], profile, launch_mode, True)
+                    self.proc = launch_chrome([url], profile, launch_mode, True, True)
                     self.last_launch = time.time()
                     self.pending_launch_at = None
                     self.once_launched = True
