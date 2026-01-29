@@ -8,13 +8,22 @@ block_cipher = None
 spec_path = globals().get("specpath") or os.getcwd()
 project_root = os.path.abspath(spec_path)
 entry_script = os.path.join(project_root, "autowake_git", "ensure_link.py")
+icon_path = os.path.join(project_root, "assets", "icon.ico")
+if not os.path.exists(icon_path):
+    icon_path = os.path.join(project_root, "assets", "icon.png")
 
 
 analysis = Analysis(
     [entry_script],
     pathex=[project_root],
     binaries=[],
-    datas=[(os.path.join(project_root, "assets", "default_saver.png"), "assets")],
+    datas=[
+        (os.path.join(project_root, "assets", "default_saver.png"), "assets"),
+        (os.path.join(project_root, "assets", "notice_default_1.png"), "assets"),
+        (os.path.join(project_root, "assets", "notice_default_2.png"), "assets"),
+        (os.path.join(project_root, "assets", "icon.png"), "assets"),
+        (os.path.join(project_root, "assets", "logo.png"), "assets"),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -32,6 +41,7 @@ exe = EXE(
     analysis.datas,
     [],
     name="autowake_beta",
+    icon=icon_path,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
