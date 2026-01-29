@@ -3346,7 +3346,11 @@ class TargetWorker(QtCore.QObject):
                 self.notice_dismissed = False
 
         hold_notice = time.time() < self.saver_release_hold_until
-        if saver_active:
+        if ui_active:
+            if self.notice.isVisible():
+                self.notice.hide()
+            self.last_interaction_lock = None
+        elif saver_active:
             if self.notice.isVisible():
                 self.notice.hide()
             self.last_interaction_lock = None

@@ -8,6 +8,9 @@ block_cipher = None
 spec_path = globals().get("specpath") or os.getcwd()
 project_root = os.path.abspath(spec_path)
 entry_script = os.path.join(project_root, "autowake_git", "ensure_link.py")
+icon_path = os.path.join(project_root, "assets", "icon.ico")
+if not os.path.exists(icon_path):
+    icon_path = os.path.join(project_root, "assets", "icon.png")
 
 
 analysis = Analysis(
@@ -38,6 +41,7 @@ exe = EXE(
     analysis.datas,
     [],
     name="autowake_beta",
+    icon=icon_path,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
