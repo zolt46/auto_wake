@@ -59,6 +59,8 @@ NOTICE_FONT_FAMILIES = [
     "Arial",
 ]
 NOTICE_STATE_FILE = "notice_state.json"
+APP_ICON_PATH = os.path.join("assets", "icon.png")
+APP_LOGO_PATH = os.path.join("assets", "logo.png")
 
 CHROME_CANDIDATES = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -129,6 +131,13 @@ def ensure_streams() -> None:
 def resource_path(relative_path: str) -> str:
     base_path = getattr(sys, "_MEIPASS", os.path.dirname(__file__))
     return os.path.join(base_path, relative_path)
+
+
+def load_app_icon() -> QtGui.QIcon:
+    icon_path = resource_path(APP_ICON_PATH)
+    if os.path.exists(icon_path):
+        return QtGui.QIcon(icon_path)
+    return QtGui.QIcon()
 
 
 # ---------- 내부 중복 실행 방지(뮤텍스) ----------
@@ -584,6 +593,29 @@ def restore_window(pid: int) -> None:
     for hwnd in handles:
         user32.ShowWindow(hwnd, 9)
         user32.SetForegroundWindow(hwnd)
+
+
+def terminate_process(pid: int) -> None:
+    if not pid:
+        return
+    try:
+        if os.name == "nt":
+            creationflags = (
+                subprocess.CREATE_NO_WINDOW
+                if hasattr(subprocess, "CREATE_NO_WINDOW")
+                else 0
+            )
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=creationflags,
+                check=False,
+            )
+        else:
+            os.kill(pid, 15)
+    except Exception:
+        pass
 
 
 def find_chrome_processes_by_profile(profile_dir: str) -> list[int]:
@@ -1151,12 +1183,16 @@ class PasswordChangeDialog(QtWidgets.QDialog):
 class NoticeWindow(QtWidgets.QWidget):
     closed = QtCore.Signal()
 
-    def __init__(self, palette: dict, cfg: AppConfig, parent=None):
+    def __init__(self, palette: dict, cfg: AppConfig, parent=None, preview: bool = False):
         super().__init__(parent)
         self.setObjectName("NoticeWindow")
-        self.setWindowFlags(
-            QtCore.Qt.Window | QtCore.Qt.WindowTitleHint | QtCore.Qt.WindowStaysOnTopHint
-        )
+        self._preview = preview
+        if preview:
+            self.setWindowFlags(QtCore.Qt.Widget)
+        else:
+            self.setWindowFlags(
+                QtCore.Qt.Window | QtCore.Qt.WindowTitleHint | QtCore.Qt.WindowStaysOnTopHint
+            )
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, False)
         self.setAutoFillBackground(True)
         self.setWindowTitle("AutoWake 안내")
@@ -1168,6 +1204,11 @@ class NoticeWindow(QtWidgets.QWidget):
         self._build_ui()
         self._apply_palette()
         self.update_content(cfg)
+        if preview:
+            self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        icon = load_app_icon()
+        if not icon.isNull():
+            self.setWindowIcon(icon)
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -1292,9 +1333,13 @@ class NoticeWindow(QtWidgets.QWidget):
         self._apply_frame_style()
 
     def set_interaction_lock(self, locked: bool) -> None:
+        if self._preview:
+            return
         self._interaction_locked = locked
         if locked:
             self.setWindowModality(QtCore.Qt.ApplicationModal)
+            if not (self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint):
+                self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
             if not self._event_filter_installed:
                 app = QtWidgets.QApplication.instance()
                 if app:
@@ -1302,6 +1347,8 @@ class NoticeWindow(QtWidgets.QWidget):
                     self._event_filter_installed = True
         else:
             self.setWindowModality(QtCore.Qt.NonModal)
+            if self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint:
+                self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowStaysOnTopHint)
             if self._event_filter_installed:
                 app = QtWidgets.QApplication.instance()
                 if app:
@@ -1423,108 +1470,60 @@ class NoticeWindow(QtWidgets.QWidget):
         return super().eventFilter(obj, event)
 
 
-class NoticePreviewWidget(QtWidgets.QFrame):
+class NoticePreviewWidget(QtWidgets.QWidget):
     def __init__(self, palette: dict, cfg: AppConfig, parent=None):
         super().__init__(parent)
         self.palette = palette
         self.cfg = cfg
         self.setObjectName("NoticePreview")
-        self.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self.setFrameShadow(QtWidgets.QFrame.Plain)
-        self.setLineWidth(0)
-
+        self._base_size = QtCore.QSize(800, 600)
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        self.title_label = QtWidgets.QLabel(DEFAULT_NOTICE_TITLE)
-        self.title_label.setObjectName("NoticePreviewTitle")
-        self.image_label = QtWidgets.QLabel(alignment=QtCore.Qt.AlignCenter)
-        self.image_label.setObjectName("NoticePreviewImage")
-        self.body_label = QtWidgets.QLabel()
-        self.body_label.setWordWrap(True)
-        self.body_label.setObjectName("NoticePreviewBody")
-        self.footer_label = QtWidgets.QLabel()
-        self.footer_label.setWordWrap(True)
-        self.footer_label.setObjectName("NoticePreviewFooter")
-        layout.addWidget(self.title_label)
-        layout.addWidget(self.image_label)
-        layout.addWidget(self.body_label)
-        layout.addWidget(self.footer_label)
-        layout.addStretch()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self.view = QtWidgets.QGraphicsView()
+        self.view.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.scene = QtWidgets.QGraphicsScene(self.view)
+        self.view.setScene(self.scene)
+        layout.addWidget(self.view)
+        self.notice = NoticeWindow(self.palette, self.cfg, preview=True)
+        self.notice.resize(self._base_size)
+        self.proxy = self.scene.addWidget(self.notice)
         self._apply_palette()
         self.apply_config(cfg)
 
     def _apply_palette(self) -> None:
         palette = self.palette
-        self.setStyleSheet(
+        self.view.setStyleSheet(
             f"""
             #NoticePreview {{
-                background: {palette['bg_card']};
+                background: {palette['bg']};
                 border-radius: 14px;
                 border: none;
             }}
-            #NoticePreviewTitle {{
-                color: {palette['text_primary']};
-                font-size: 16px;
-                font-weight: 700;
-            }}
-            #NoticePreviewBody {{
-                color: {palette['text_muted']};
-            }}
-            #NoticePreviewFooter {{
-                color: {palette['text_muted']};
-            }}
             """
         )
-        self._apply_frame_style()
-
-    def _apply_frame_style(self) -> None:
-        return
+        self.view.setBackgroundBrush(QtGui.QColor(palette["bg"]))
 
     def apply_config(self, cfg: AppConfig) -> None:
         self.cfg = cfg
-        title, body, footer = build_notice_content(cfg)
-        self.title_label.setText(title)
-        self.body_label.setTextFormat(QtCore.Qt.PlainText)
-        self.footer_label.setTextFormat(QtCore.Qt.PlainText)
-        self.body_label.setText(body)
-        self.footer_label.setText(footer)
-        body_font = _build_notice_font(
-            cfg.notice_body_font_family,
-            cfg.notice_body_font_size,
-            cfg.notice_body_bold,
-            cfg.notice_body_italic,
-        )
-        footer_font = _build_notice_font(
-            cfg.notice_footer_font_family,
-            cfg.notice_footer_font_size,
-            cfg.notice_footer_bold,
-            cfg.notice_footer_italic,
-        )
-        self.body_label.setFont(body_font)
-        self.footer_label.setFont(footer_font)
-        self.body_label.setStyleSheet(_notice_style(body_font))
-        self.footer_label.setStyleSheet(_notice_style(footer_font))
-        self.body_label.setAlignment(_notice_alignment(cfg.notice_body_align))
-        self.footer_label.setAlignment(_notice_alignment(cfg.notice_footer_align))
-        self._apply_frame_style()
-        self._update_image()
+        self.notice.palette = self.palette
+        self.notice.update_content(cfg)
+        self.notice.resize(self._base_size)
+        self.notice.show()
+        self._sync_scale()
 
-    def _update_image(self) -> None:
-        path = resolve_notice_image_path(self.cfg)
-        height = max(20, int(self.cfg.notice_image_height))
-        self.image_label.setFixedHeight(height)
-        if not path:
-            self.image_label.clear()
-            self.image_label.show()
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._sync_scale()
+
+    def _sync_scale(self) -> None:
+        if not self.proxy:
             return
-        pixmap = QtGui.QPixmap(path)
-        if pixmap.isNull():
-            self.image_label.clear()
-            self.image_label.show()
-            return
-        scaled = pixmap.scaledToHeight(height, QtCore.Qt.SmoothTransformation)
-        self.image_label.setPixmap(scaled)
-        self.image_label.show()
+        self.scene.setSceneRect(self.proxy.boundingRect())
+        self.view.resetTransform()
+        self.view.fitInView(self.proxy, QtCore.Qt.KeepAspectRatio)
 
 
 class NoticeConfigDialog(QtWidgets.QDialog):
@@ -1544,7 +1543,7 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         layout = QtWidgets.QHBoxLayout(self)
         preview_panel = QtWidgets.QWidget()
         preview_layout = QtWidgets.QVBoxLayout(preview_panel)
-        preview_title = QtWidgets.QLabel("안내 팝업(축소형) 미리보기")
+        preview_title = QtWidgets.QLabel("안내 팝업 미리보기")
         preview_title.setObjectName("CardTitle")
         preview_layout.addWidget(preview_title)
         self.preview = NoticePreviewWidget(self.palette, self.cfg)
@@ -2333,6 +2332,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("AutoWake")
         self.resize(700, 580)
         self.setMinimumSize(660, 560)
+        icon = load_app_icon()
+        if not icon.isNull():
+            self.setWindowIcon(icon)
         central = QtWidgets.QWidget()
         main_layout = QtWidgets.QVBoxLayout(central)
         main_layout.setContentsMargins(12, 12, 12, 12)
@@ -2346,6 +2348,14 @@ class MainWindow(QtWidgets.QMainWindow):
         title.setObjectName("TopTitle")
         title_box.addWidget(title)
         top_layout.addLayout(title_box)
+        logo_label = QtWidgets.QLabel()
+        logo_label.setObjectName("TopLogo")
+        logo_path = resource_path(APP_LOGO_PATH)
+        if os.path.exists(logo_path):
+            logo_pixmap = QtGui.QPixmap(logo_path)
+            if not logo_pixmap.isNull():
+                logo_label.setPixmap(logo_pixmap.scaledToHeight(34, QtCore.Qt.SmoothTransformation))
+        top_layout.addWidget(logo_label)
         top_layout.addStretch()
         self.start_button = QtWidgets.QPushButton("웨이크업 시작")
         self.stop_button = QtWidgets.QPushButton("웨이크업 중지")
@@ -2775,6 +2785,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._update_accent_color_button(original_color or self.palette["accent"])
 
     def _build_tray_icon(self) -> QtGui.QIcon:
+        icon = load_app_icon()
+        if not icon.isNull():
+            return icon
         size = 64
         pixmap = QtGui.QPixmap(size, size)
         pixmap.fill(QtCore.Qt.transparent)
@@ -3214,6 +3227,8 @@ class AudioWorker:
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
         self.proc = None
+        if self.external_pid:
+            terminate_process(self.external_pid)
         self.external_pid = None
         self.last_minimized_pid = None
         self.pending_minimize_pid = None
@@ -3467,6 +3482,13 @@ class SaverWorker(QtCore.QObject):
             self.window.hide()
         elif idle >= self.cfg.idle_to_show_sec:
             if not self.window.isVisible():
+                if not self.saver_visible:
+                    self.saver_visible = True
+                    write_notice_state(
+                        self.cfg.work_dir,
+                        saver_active=1.0,
+                        saver_trigger_at=time.time(),
+                    )
                 self.window.show_fullscreen()
                 if not self.saver_visible:
                     self.saver_visible = True
@@ -3488,6 +3510,9 @@ def run_target_worker():
     ensure_streams()
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    icon = load_app_icon()
+    if not icon.isNull():
+        app.setWindowIcon(icon)
     worker = TargetWorker()
     app.aboutToQuit.connect(worker.notice.close)
     app.exec()
@@ -3496,6 +3521,9 @@ def run_target_worker():
 def run_saver_worker():
     ensure_streams()
     app = QtWidgets.QApplication(sys.argv)
+    icon = load_app_icon()
+    if not icon.isNull():
+        app.setWindowIcon(icon)
     worker = SaverWorker()
     app.aboutToQuit.connect(worker.window.close)
     app.exec()
@@ -3504,6 +3532,9 @@ def run_saver_worker():
 def run_ui():
     ensure_streams()
     app = QtWidgets.QApplication(sys.argv)
+    icon = load_app_icon()
+    if not icon.isNull():
+        app.setWindowIcon(icon)
     window = MainWindow()
     window.hide()
     QtCore.QTimer.singleShot(0, window._start_workers)
