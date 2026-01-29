@@ -2787,6 +2787,11 @@ class TargetWorker(QtCore.QObject):
             return self.proc.pid
         return self.external_pid
 
+    def _proc_has_visible_window(self) -> bool:
+        if not self.proc or self.proc.poll() is not None:
+            return False
+        return bool(find_window_handles_by_pid(self.proc.pid))
+
 
 class SaverWorker(QtCore.QObject):
     def __init__(self):
