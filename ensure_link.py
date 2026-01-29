@@ -49,6 +49,15 @@ NOTICE_BUNDLED_LABELS = {
     "notice_default_1.png": "기본 이미지 1",
     "notice_default_2.png": "기본 이미지 2",
 }
+NOTICE_FONT_FAMILIES = [
+    "Noto Sans KR",
+    "Malgun Gothic",
+    "Nanum Gothic",
+    "NanumSquare",
+    "Apple SD Gothic Neo",
+    "Segoe UI",
+    "Arial",
+]
 
 CHROME_CANDIDATES = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -572,6 +581,14 @@ def _build_notice_font(family: str, size: int, bold: bool, italic: bool) -> QtGu
     font.setBold(bool(bold))
     font.setItalic(bool(italic))
     return font
+
+
+def _notice_style(font: QtGui.QFont) -> str:
+    weight = "700" if font.bold() else "500"
+    style = "italic" if font.italic() else "normal"
+    size = font.pointSize() if font.pointSize() > 0 else 12
+    family = font.family().replace("'", "\\'")
+    return f"font-family: '{family}'; font-size: {size}px; font-weight: {weight}; font-style: {style};"
 
 
 def build_notice_content(cfg: AppConfig) -> tuple[str, str, str]:
@@ -1121,6 +1138,8 @@ class NoticeWindow(QtWidgets.QWidget):
         )
         self.body_label.setFont(body_font)
         self.footer_label.setFont(footer_font)
+        self.body_label.setStyleSheet(_notice_style(body_font))
+        self.footer_label.setStyleSheet(_notice_style(footer_font))
         self.body_label.setAlignment(_notice_alignment(cfg.notice_body_align))
         self.footer_label.setAlignment(_notice_alignment(cfg.notice_footer_align))
         self._update_image()
@@ -1234,6 +1253,8 @@ class NoticePreviewWidget(QtWidgets.QFrame):
         )
         self.body_label.setFont(body_font)
         self.footer_label.setFont(footer_font)
+        self.body_label.setStyleSheet(_notice_style(body_font))
+        self.footer_label.setStyleSheet(_notice_style(footer_font))
         self.body_label.setAlignment(_notice_alignment(cfg.notice_body_align))
         self.footer_label.setAlignment(_notice_alignment(cfg.notice_footer_align))
         self._update_image()
@@ -1325,7 +1346,9 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.body_font_size.setSingleStep(1)
         self.body_bold = QtWidgets.QCheckBox("굵게")
         self.body_italic = QtWidgets.QCheckBox("기울임")
-        self.body_font_family = QtWidgets.QFontComboBox()
+        self.body_font_family = QtWidgets.QComboBox()
+        self.body_font_family.addItems(NOTICE_FONT_FAMILIES)
+        self.body_font_family.setEditable(False)
         self.body_align = QtWidgets.QComboBox()
         self.body_align.addItem("왼쪽", "left")
         self.body_align.addItem("가운데", "center")
@@ -1354,7 +1377,9 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.footer_font_size.setSingleStep(1)
         self.footer_bold = QtWidgets.QCheckBox("굵게")
         self.footer_italic = QtWidgets.QCheckBox("기울임")
-        self.footer_font_family = QtWidgets.QFontComboBox()
+        self.footer_font_family = QtWidgets.QComboBox()
+        self.footer_font_family.addItems(NOTICE_FONT_FAMILIES)
+        self.footer_font_family.setEditable(False)
         self.footer_align = QtWidgets.QComboBox()
         self.footer_align.addItem("왼쪽", "left")
         self.footer_align.addItem("가운데", "center")
@@ -1405,13 +1430,13 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.body_font_size.valueChanged.connect(self._update_preview)
         self.body_bold.stateChanged.connect(self._update_preview)
         self.body_italic.stateChanged.connect(self._update_preview)
-        self.body_font_family.currentFontChanged.connect(lambda _font: self._update_preview())
+        self.body_font_family.currentIndexChanged.connect(self._update_preview)
         self.body_align.currentIndexChanged.connect(self._update_preview)
         self.footer_text.textChanged.connect(self._update_preview)
         self.footer_font_size.valueChanged.connect(self._update_preview)
         self.footer_bold.stateChanged.connect(self._update_preview)
         self.footer_italic.stateChanged.connect(self._update_preview)
-        self.footer_font_family.currentFontChanged.connect(lambda _font: self._update_preview())
+        self.footer_font_family.currentIndexChanged.connect(self._update_preview)
         self.footer_align.currentIndexChanged.connect(self._update_preview)
 
     def _load_config(self, cfg: AppConfig) -> None:
@@ -1429,7 +1454,9 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.body_font_size.setValue(int(cfg.notice_body_font_size))
         self.body_bold.setChecked(bool(cfg.notice_body_bold))
         self.body_italic.setChecked(bool(cfg.notice_body_italic))
-        self.body_font_family.setCurrentFont(QtGui.QFont(cfg.notice_body_font_family))
+        body_font_index = self.body_font_family.findText(cfg.notice_body_font_family)
+        if body_font_index >= 0:
+            self.body_font_family.setCurrentIndex(body_font_index)
         body_align_index = self.body_align.findData(cfg.notice_body_align)
         if body_align_index >= 0:
             self.body_align.setCurrentIndex(body_align_index)
@@ -1437,7 +1464,9 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.footer_font_size.setValue(int(cfg.notice_footer_font_size))
         self.footer_bold.setChecked(bool(cfg.notice_footer_bold))
         self.footer_italic.setChecked(bool(cfg.notice_footer_italic))
-        self.footer_font_family.setCurrentFont(QtGui.QFont(cfg.notice_footer_font_family))
+        footer_font_index = self.footer_font_family.findText(cfg.notice_footer_font_family)
+        if footer_font_index >= 0:
+            self.footer_font_family.setCurrentIndex(footer_font_index)
         footer_align_index = self.footer_align.findData(cfg.notice_footer_align)
         if footer_align_index >= 0:
             self.footer_align.setCurrentIndex(footer_align_index)
@@ -1530,12 +1559,12 @@ class NoticeConfigDialog(QtWidgets.QDialog):
             "notice_body_bold": bool(self.body_bold.isChecked()),
             "notice_body_italic": bool(self.body_italic.isChecked()),
             "notice_body_align": str(self.body_align.currentData()),
-            "notice_body_font_family": self.body_font_family.currentFont().family(),
+            "notice_body_font_family": self.body_font_family.currentText(),
             "notice_footer_font_size": int(self.footer_font_size.value()),
             "notice_footer_bold": bool(self.footer_bold.isChecked()),
             "notice_footer_italic": bool(self.footer_italic.isChecked()),
             "notice_footer_align": str(self.footer_align.currentData()),
-            "notice_footer_font_family": self.footer_font_family.currentFont().family(),
+            "notice_footer_font_family": self.footer_font_family.currentText(),
             "notice_image_mode": str(self.image_mode.currentData()),
             "notice_image_path": self.image_path.text().strip(),
             "notice_bundled_image": str(self.bundled_image.currentData()),
@@ -2160,10 +2189,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.target_relaunch_cooldown.setRange(1.0, 600.0)
         self.target_relaunch_cooldown.setSingleStep(1.0)
         self.target_relaunch_cooldown.setDecimals(2)
-        self.target_refocus_interval = StepperInput()
-        self.target_refocus_interval.setRange(1.0, 60.0)
-        self.target_refocus_interval.setSingleStep(1.0)
-        self.target_refocus_interval.setDecimals(2)
         self.target_repeat_mode = ModeSelector(
             ["repeat", "once"],
             labels={"repeat": "반복 실행", "once": "초기 1회 실행"},
@@ -2172,7 +2197,6 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow(self._label("시작 창 모드"), self.target_mode)
         form.addRow(self._label("시작 지연(초)"), self.target_start_delay)
         form.addRow(self._label("재실행 쿨다운(초)"), self.target_relaunch_cooldown)
-        form.addRow(self._label("재포커스 간격(초)"), self.target_refocus_interval)
         form.addRow(self._label("실행 방식"), self.target_repeat_mode)
         layout.addLayout(form)
 
@@ -2221,9 +2245,9 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow(self._label("이미지 표시"), self.saver_display_mode)
         self.saver_path_label = self._label("이미지 경로")
         form.addRow(self.saver_path_label, self.saver_path_row)
-        form.addRow(self._label("표시 대기(초)"), self.saver_idle_delay)
-        form.addRow(self._label("활동 감지 임계(초)"), self.saver_active_threshold)
-        form.addRow(self._label("폴링 주기(초)"), self.saver_poll)
+        form.addRow(self._label("표시 대기(초) (유휴 시간)"), self.saver_idle_delay)
+        form.addRow(self._label("활동 감지 임계(초) (입력 감지)"), self.saver_active_threshold)
+        form.addRow(self._label("폴링 주기(초) (상태 확인)"), self.saver_poll)
         form.addRow(self._label("시작 지연(초)"), self.saver_start_delay)
         layout.addLayout(form)
         self._update_saver_path_controls()
@@ -2520,7 +2544,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.target_mode.setCurrentText(cfg.target_window_mode)
         self.target_start_delay.setValue(cfg.target_start_delay_sec)
         self.target_relaunch_cooldown.setValue(cfg.target_relaunch_cooldown_sec)
-        self.target_refocus_interval.setValue(cfg.target_refocus_interval_sec)
         self.target_repeat_mode.setCurrentText(cfg.target_repeat_mode)
 
         self.saver_enabled.setChecked(cfg.saver_enabled)
@@ -2574,7 +2597,7 @@ class MainWindow(QtWidgets.QMainWindow):
             target_window_mode=target_mode,
             target_start_delay_sec=self.target_start_delay.value(),
             target_relaunch_cooldown_sec=self.target_relaunch_cooldown.value(),
-            target_refocus_interval_sec=self.target_refocus_interval.value(),
+            target_refocus_interval_sec=self.cfg.target_refocus_interval_sec,
             target_repeat_mode=self.target_repeat_mode.currentText(),
             saver_start_delay_sec=self.saver_start_delay.value(),
             notice_enabled=self.notice_enabled.isChecked(),
@@ -2663,7 +2686,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.audio_relaunch_cooldown,
             self.target_start_delay,
             self.target_relaunch_cooldown,
-            self.target_refocus_interval,
             self.saver_idle_delay,
             self.saver_active_threshold,
             self.saver_poll,
@@ -2712,6 +2734,7 @@ class AudioWorker:
         self.cfg = load_config()
         self.proc: Optional[subprocess.Popen] = None
         self.external_pid: Optional[int] = None
+        self.last_minimized_pid: Optional[int] = None
         self.last_launch = 0.0
         self.pending_launch_at: Optional[float] = None
         self.last_config_signature: Optional[tuple] = None
@@ -2753,8 +2776,12 @@ class AudioWorker:
                     self.last_launch = time.time()
                     self.pending_launch_at = None
                     self.once_launched = True
-                    if (self.cfg.audio_window_mode or "").lower() == "minimized":
+                    if (
+                        (self.cfg.audio_window_mode or "").lower() == "minimized"
+                        and self.external_pid != self.last_minimized_pid
+                    ):
                         minimize_window(self.external_pid)
+                        self.last_minimized_pid = self.external_pid
                     time.sleep(self.cfg.poll_sec)
                     continue
                 if self.cfg.audio_repeat_mode == "once" and self.once_launched:
@@ -2775,8 +2802,13 @@ class AudioWorker:
                     self.last_launch = time.time()
                     self.pending_launch_at = None
                     self.once_launched = True
-                    if self.proc and (self.cfg.audio_window_mode or "").lower() == "minimized":
+                    if (
+                        self.proc
+                        and (self.cfg.audio_window_mode or "").lower() == "minimized"
+                        and self.proc.pid != self.last_minimized_pid
+                    ):
                         minimize_window(self.proc.pid)
+                        self.last_minimized_pid = self.proc.pid
             time.sleep(max(self.cfg.poll_sec, 0.2))
 
     def _stop_proc(self):
@@ -2784,6 +2816,7 @@ class AudioWorker:
             self.proc.terminate()
         self.proc = None
         self.external_pid = None
+        self.last_minimized_pid = None
 
 
 class TargetWorker(QtCore.QObject):
@@ -2792,6 +2825,7 @@ class TargetWorker(QtCore.QObject):
         self.cfg = load_config()
         self.proc: Optional[subprocess.Popen] = None
         self.external_pid: Optional[int] = None
+        self.last_minimized_pid: Optional[int] = None
         self.last_launch = 0.0
         self.last_refocus = 0.0
         self.pending_launch_at: Optional[float] = None
@@ -2870,14 +2904,21 @@ class TargetWorker(QtCore.QObject):
         if self.proc is None or self.proc.poll() is not None:
             profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "target")
             os.makedirs(profile, exist_ok=True)
-            existing = find_chrome_processes_by_profile(profile)
+            existing = [
+                pid for pid in find_chrome_processes_by_profile(profile)
+                if find_window_handles_by_pid(pid)
+            ]
             if existing:
                 self.external_pid = existing[0]
                 self.last_launch = time.time()
                 self.pending_launch_at = None
                 self.once_launched = True
-                if (self.cfg.target_window_mode or "").lower() == "minimized":
+                if (
+                    (self.cfg.target_window_mode or "").lower() == "minimized"
+                    and self.external_pid != self.last_minimized_pid
+                ):
                     minimize_window(self.external_pid)
+                    self.last_minimized_pid = self.external_pid
                 return
             if self.cfg.target_repeat_mode == "once" and self.once_launched:
                 return
@@ -2903,8 +2944,13 @@ class TargetWorker(QtCore.QObject):
                 self.pending_launch_at = None
                 self.once_launched = True
                 self.missing_window_since = None
-                if self.proc and (self.cfg.target_window_mode or "").lower() == "minimized":
+                if (
+                    self.proc
+                    and (self.cfg.target_window_mode or "").lower() == "minimized"
+                    and self.proc.pid != self.last_minimized_pid
+                ):
                     minimize_window(self.proc.pid)
+                    self.last_minimized_pid = self.proc.pid
 
         if self._current_pid():
             now = time.time()
@@ -2921,6 +2967,7 @@ class TargetWorker(QtCore.QObject):
             self.proc.terminate()
         self.proc = None
         self.external_pid = None
+        self.last_minimized_pid = None
 
     def _proc_has_visible_window(self) -> bool:
         pid = self._current_pid()
