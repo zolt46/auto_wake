@@ -1310,7 +1310,12 @@ class NoticeWindow(QtWidgets.QWidget):
             }}
             """
         )
-        self._apply_frame_style()
+        self._apply_window_icon()
+
+    def _apply_window_icon(self) -> None:
+        icon = load_app_icon()
+        if not icon.isNull():
+            self.setWindowIcon(icon)
 
     def _apply_frame_style(self) -> None:
         self.frame.setStyleSheet(
@@ -1337,6 +1342,7 @@ class NoticeWindow(QtWidgets.QWidget):
                 self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowStaysOnTopHint)
         if self.isVisible():
             self.show()
+            self._apply_window_icon()
             if locked:
                 self.raise_()
                 self.activateWindow()
@@ -1414,9 +1420,7 @@ class NoticeWindow(QtWidgets.QWidget):
             width,
             height,
         )
-        icon = load_app_icon()
-        if not icon.isNull():
-            self.setWindowIcon(icon)
+        self._apply_window_icon()
         self.show()
         self.raise_()
         self.activateWindow()
@@ -1482,7 +1486,11 @@ class NoticePreviewWidget(QtWidgets.QWidget):
         self.cfg = cfg
         self.notice.palette = self.palette
         self.notice.update_content(cfg)
-        self.notice.resize(self._base_size)
+        self.notice.adjustSize()
+        size_hint = self.notice.sizeHint()
+        width = max(self._base_size.width(), size_hint.width())
+        height = max(self._base_size.height(), size_hint.height())
+        self.notice.resize(QtCore.QSize(width, height))
         self.notice.show()
         self._sync_scale()
 
@@ -1542,6 +1550,7 @@ class NoticeConfigDialog(QtWidgets.QDialog):
                 [
                     f"QWidget {{ background: {self.palette['dialog_bg']};",
                     f"color: {self.palette['dialog_text']}; }}",
+                    f"QLabel, QCheckBox, QRadioButton {{ color: {self.palette['dialog_text']}; }}",
                     f"QGroupBox {{ background: {self.palette['dialog_bg']};",
                     f"border: 1px solid {self.palette['dialog_border']};",
                     "border-radius: 12px; margin-top: 10px; padding: 8px; }}",
@@ -3388,8 +3397,8 @@ class TargetWorker(QtCore.QObject):
         saver_trigger_at = float(state.get("saver_trigger_at", 0.0))
         if saver_trigger_at > self.last_saver_trigger_at:
             self.last_saver_trigger_at = saver_trigger_at
-            self.pending_notice_after_saver = True
-            self.notice_dismissed = False
+            if not self.notice_dismissed:
+                self.pending_notice_after_saver = True
 
         dismissed_at = float(state.get("notice_dismissed_at", 0.0))
         if (
