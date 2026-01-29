@@ -1,4 +1,5 @@
 import argparse
+import html
 import ctypes
 from ctypes import wintypes
 from dataclasses import dataclass, asdict, replace
@@ -61,6 +62,10 @@ NOTICE_FONT_FAMILIES = [
 NOTICE_STATE_FILE = "notice_state.json"
 APP_ICON_PATH = os.path.join("assets", "icon.png")
 APP_LOGO_PATH = os.path.join("assets", "logo.png")
+APP_NAME = "AutoWake"
+APP_VERSION = "1.0.0"
+AUTHOR_NAME = "Zolt46 / PSW / Emanon108"
+BUILD_DATE = "2025-01-01"
 
 CHROME_CANDIDATES = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -874,6 +879,69 @@ class FancyCard(QtWidgets.QFrame):
         layout.addLayout(self.body_layout)
 
 
+class ClickableLabel(QtWidgets.QLabel):
+    doubleClicked = QtCore.Signal()
+
+    def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == QtCore.Qt.LeftButton:
+            self.doubleClicked.emit()
+        super().mouseDoubleClickEvent(event)
+
+
+class EasterEggDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("AutoWake Secret Studio")
+        self.setModal(True)
+        self.setMinimumWidth(520)
+        self.setStyleSheet(
+            """
+            QDialog { background-color: #0F172A; }
+            QLabel[popup-role="body"], QLabel[popup-role="hint"] { color: #E2E8F0; }
+            """
+        )
+        layout = QtWidgets.QVBoxLayout(self)
+        icon = load_app_icon()
+        if not icon.isNull():
+            icon_label = QtWidgets.QLabel()
+            icon_label.setAlignment(QtCore.Qt.AlignCenter)
+            icon_label.setPixmap(icon.pixmap(64, 64))
+            layout.addWidget(icon_label)
+        ascii_art = r"""
+ █████╗ ██╗   ██╗████████╗ ██████╗ ██╗    ██╗ █████╗ ██╗  ██╗
+██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗██║    ██║██╔══██╗██║ ██╔╝
+███████║██║   ██║   ██║   ██║   ██║██║ █╗ ██║███████║█████╔╝ 
+██╔══██║██║   ██║   ██║   ██║   ██║██║███╗██║██╔══██║██╔═██╗ 
+██║  ██║╚██████╔╝   ██║   ╚██████╔╝╚███╔███╔╝██║  ██║██║  ██╗
+╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝  ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝
+        """.strip("\n")
+        label = QtWidgets.QLabel(
+            "<pre style='color:#2FF5C9; font-family: "
+            "Cascadia Code, Consolas, monospace; font-size: 14px; font-weight:600;'>"
+            f"{html.escape(ascii_art)}"
+            "</pre>"
+        )
+        label.setAlignment(QtCore.Qt.AlignCenter)
+        label.setTextFormat(QtCore.Qt.RichText)
+        layout.addWidget(label)
+        message = QtWidgets.QLabel(
+            "숨은 공방을 찾아내셨군요!\n"
+            "조용히 깨어나는 자동화의 순간을 위해,\n"
+            "AutoWake가 오늘도 함께합니다."
+        )
+        message.setAlignment(QtCore.Qt.AlignCenter)
+        message.setWordWrap(True)
+        message.setProperty("popup-role", "body")
+        layout.addWidget(message)
+        quote = QtWidgets.QLabel(
+            "<i>“좋은 하루는 조용한 깨움에서 시작됩니다.”<br>"
+            "— AutoWake Studio 비밀 노트</i>"
+        )
+        quote.setAlignment(QtCore.Qt.AlignCenter)
+        quote.setProperty("popup-role", "hint")
+        layout.addWidget(quote)
+
+
 class UrlListDialog(QtWidgets.QDialog):
     def __init__(self, title: str, urls: list[str], palette: dict, parent=None):
         super().__init__(parent)
@@ -1550,25 +1618,16 @@ class NoticeConfigDialog(QtWidgets.QDialog):
                 [
                     f"QWidget {{ background: {self.palette['dialog_bg']};",
                     f"color: {self.palette['dialog_text']}; }}",
-                    f"QLabel, QCheckBox, QRadioButton {{ color: {self.palette['dialog_text']}; }}",
+                    f"QLabel, QCheckBox, QRadioButton {{ color: {self.palette['dialog_text']};",
+                    "font-size: 13px; }}",
                     f"QGroupBox {{ background: {self.palette['dialog_bg']};",
                     f"border: 1px solid {self.palette['dialog_border']};",
                     "border-radius: 12px; margin-top: 10px; padding: 8px; }}",
-                    "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; }",
+                    "QGroupBox::title { subcontrol-origin: margin; left: 12px;",
+                    "padding: 0 6px; font-size: 13px; font-weight: 600; }",
                 ]
             )
         )
-        control_panel.setStyleSheet(
-            " ".join(
-                [
-                    f"QGroupBox {{ background: {self.palette['dialog_bg']};",
-                    f"border: 1px solid {self.palette['dialog_border']};",
-                    "border-radius: 12px; margin-top: 10px; padding: 8px; }}",
-                    "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; }",
-                ]
-            )
-        )
-
         general_group = QtWidgets.QGroupBox("기본 설정")
         general_layout = QtWidgets.QFormLayout(general_group)
         general_layout.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
@@ -2406,7 +2465,7 @@ class MainWindow(QtWidgets.QMainWindow):
         title.setObjectName("TopTitle")
         title_box.addWidget(title)
         top_layout.addLayout(title_box)
-        logo_label = QtWidgets.QLabel()
+        logo_label = ClickableLabel()
         logo_label.setObjectName("TopLogo")
         logo_label.setContentsMargins(14, 0, 2, 0)
         logo_path = resource_path(APP_LOGO_PATH)
@@ -2414,6 +2473,7 @@ class MainWindow(QtWidgets.QMainWindow):
             logo_pixmap = QtGui.QPixmap(logo_path)
             if not logo_pixmap.isNull():
                 logo_label.setPixmap(logo_pixmap.scaledToHeight(34, QtCore.Qt.SmoothTransformation))
+        logo_label.doubleClicked.connect(self._open_easter_egg)
         top_layout.addWidget(logo_label)
         top_layout.addStretch()
         self.start_button = QtWidgets.QPushButton("웨이크업 시작")
@@ -2480,10 +2540,21 @@ class MainWindow(QtWidgets.QMainWindow):
         settings_layout.addWidget(self.general_card)
         settings_layout.addStretch()
 
+        self.credits_card = FancyCard(
+            "크레딧",
+            "프로그램 제작 정보를 확인합니다.",
+        )
+        self._build_credits_section(self.credits_card.body_layout)
+        credits_tab = QtWidgets.QWidget()
+        credits_layout = QtWidgets.QVBoxLayout(credits_tab)
+        credits_layout.addWidget(self.credits_card)
+        credits_layout.addStretch()
+
         tabs.addTab(audio_tab, "음원 옵션")
         tabs.addTab(target_tab, "URL 옵션")
         tabs.addTab(saver_tab, "스크린 세이버 옵션")
         tabs.addTab(settings_tab, "프로그램 설정")
+        tabs.addTab(credits_tab, "크레딧")
 
         main_layout.addWidget(tabs)
         self.setCentralWidget(central)
@@ -2698,6 +2769,34 @@ class MainWindow(QtWidgets.QMainWindow):
         self.change_password_button.clicked.connect(self._change_password)
         self.change_password_button.setFixedWidth(140)
         layout.addWidget(self.change_password_button)
+
+    def _build_credits_section(self, layout: QtWidgets.QVBoxLayout) -> None:
+        title = QtWidgets.QLabel(f"<b>{APP_NAME}</b> 제작 크레딧")
+        title.setAlignment(QtCore.Qt.AlignCenter)
+        title.setProperty("popup-role", "body")
+        layout.addWidget(title)
+        grid = QtWidgets.QFormLayout()
+        grid.setLabelAlignment(QtCore.Qt.AlignRight)
+        grid.setFormAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        grid.setVerticalSpacing(8)
+        grid.addRow("버전", QtWidgets.QLabel(APP_VERSION))
+        grid.addRow("제작자", QtWidgets.QLabel(AUTHOR_NAME))
+        grid.addRow("제작 날짜", QtWidgets.QLabel(BUILD_DATE))
+        grid.addRow(
+            "저작권",
+            QtWidgets.QLabel("© 2025 Zolt46 / PSW / Emanon108. All rights reserved."),
+        )
+        grid.addRow("문의", QtWidgets.QLabel("다산정보관 참고자료실 데스크"))
+        grid_widget = QtWidgets.QWidget()
+        grid_widget.setLayout(grid)
+        layout.addWidget(grid_widget)
+        note = QtWidgets.QLabel("\n• 로고를 더블 클릭하면 숨겨진 이야기가 열립니다.")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+    def _open_easter_egg(self) -> None:
+        dialog = EasterEggDialog(self)
+        dialog.exec()
 
     def _load_notice_config(self, cfg: AppConfig) -> None:
         self.notice_config = {
@@ -3418,8 +3517,9 @@ class TargetWorker(QtCore.QObject):
         )
         if ui_active:
             if self.notice.isVisible():
-                self.notice.hide()
-            self.last_interaction_lock = None
+                self.notice.set_interaction_lock(False)
+                self.notice.lower()
+            self.last_interaction_lock = False
         elif saver_active:
             if self.notice.isVisible():
                 self.notice.hide()
@@ -3433,6 +3533,9 @@ class TargetWorker(QtCore.QObject):
                     notice_last_shown_at=now,
                     notice_dismissed_at=0.0,
                 )
+            if self.notice.isVisible():
+                self.notice.raise_()
+                self.notice.activateWindow()
             desired_lock = not ui_active
             if self.last_interaction_lock is None or desired_lock != self.last_interaction_lock:
                 self.notice.set_interaction_lock(desired_lock)
