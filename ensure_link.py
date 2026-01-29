@@ -1500,7 +1500,7 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("안내 팝업 구성")
         self.setModal(True)
-        self.setMinimumSize(1120, 720)
+        self.setMinimumSize(1180, 820)
         self.palette = palette
         self.cfg = cfg
         self._build_ui()
@@ -1530,6 +1530,16 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         control_layout = QtWidgets.QVBoxLayout(control_panel)
         control_layout.setContentsMargins(12, 12, 12, 12)
         control_layout.setSpacing(16)
+        control_panel.setStyleSheet(
+            " ".join(
+                [
+                    f"QGroupBox {{ background: {self.palette['dialog_bg']};",
+                    f"border: 1px solid {self.palette['dialog_border']};",
+                    "border-radius: 12px; margin-top: 10px; padding: 8px; }}",
+                    "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; }",
+                ]
+            )
+        )
 
         general_group = QtWidgets.QGroupBox("기본 설정")
         general_layout = QtWidgets.QFormLayout(general_group)
@@ -1690,19 +1700,10 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         button_row.addStretch()
         button_row.addWidget(self.cancel_button)
         button_row.addWidget(self.save_button)
+        control_layout.addLayout(button_row)
 
-        control_scroll = QtWidgets.QScrollArea()
-        control_scroll.setWidgetResizable(True)
-        control_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        control_scroll.setWidget(control_panel)
-        controls_wrapper = QtWidgets.QWidget()
-        controls_layout = QtWidgets.QVBoxLayout(controls_wrapper)
-        controls_layout.setContentsMargins(0, 0, 0, 0)
-        controls_layout.setSpacing(12)
-        controls_layout.addWidget(control_scroll, 1)
-        controls_layout.addLayout(button_row)
-        controls_wrapper.setMinimumWidth(520)
-        splitter.addWidget(controls_wrapper)
+        control_panel.setMinimumWidth(560)
+        splitter.addWidget(control_panel)
         splitter.addWidget(preview_panel)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
@@ -2079,7 +2080,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._password_dialog: Optional[PasswordDialog] = None
         self._opening_settings = False
         self._raising_window = False
+        self._ui_active = False
         self.notice_config: dict[str, object] = {}
+        write_notice_state(self.cfg.work_dir, ui_active=0.0)
         self._build_ui()
         self._apply_palette()
         self._loading = False
@@ -2725,11 +2728,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self.cfg.admin_password = ""
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
-        update_notice_state_counter(self.cfg.work_dir, "ui_active", 1)
+        if not self._ui_active:
+            update_notice_state_counter(self.cfg.work_dir, "ui_active", 1)
+            self._ui_active = True
         super().showEvent(event)
 
     def hideEvent(self, event: QtGui.QHideEvent) -> None:
-        update_notice_state_counter(self.cfg.work_dir, "ui_active", -1)
+        if self._ui_active:
+            update_notice_state_counter(self.cfg.work_dir, "ui_active", -1)
+            self._ui_active = False
         super().hideEvent(event)
 
     def _change_password(self):
