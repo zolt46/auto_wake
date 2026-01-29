@@ -103,17 +103,20 @@ class AppConfig:
     chrome_repeat: bool = True
     ui_theme: str = "accent"
     saver_image_mode: str = "bundled"
+    saver_display_mode: str = "full"
     audio_url: str = DEFAULT_AUDIO_URL
     audio_urls: list[str] = None
     audio_enabled: bool = True
     audio_window_mode: str = "minimized"
     audio_start_delay_sec: float = 2.0
     audio_relaunch_cooldown_sec: float = 10.0
+    audio_repeat_mode: str = "repeat"
     target_enabled: bool = True
     target_window_mode: str = "fullscreen"
     target_start_delay_sec: float = 1.0
     target_relaunch_cooldown_sec: float = 10.0
     target_refocus_interval_sec: float = 3.0
+    target_repeat_mode: str = "repeat"
     saver_start_delay_sec: float = 1.0
     notice_enabled: bool = True
     admin_password: str = ""
@@ -153,6 +156,7 @@ class AppConfig:
             chrome_repeat=bool(data.get("chrome_repeat", True)),
             ui_theme="accent",
             saver_image_mode=str(data.get("saver_image_mode", "bundled")),
+            saver_display_mode=str(data.get("saver_display_mode", "full")),
             audio_url=data.get("audio_url", DEFAULT_AUDIO_URL),
             audio_urls=list(data.get("audio_urls", [])) or [
                 data.get("audio_url", DEFAULT_AUDIO_URL)
@@ -163,6 +167,7 @@ class AppConfig:
             audio_relaunch_cooldown_sec=float(
                 data.get("audio_relaunch_cooldown_sec", 10.0)
             ),
+            audio_repeat_mode=str(data.get("audio_repeat_mode", "repeat")),
             target_enabled=bool(data.get("target_enabled", True)),
             target_window_mode=data.get("target_window_mode", inferred_mode),
             target_start_delay_sec=float(data.get("target_start_delay_sec", 1.0)),
@@ -172,6 +177,7 @@ class AppConfig:
             target_refocus_interval_sec=float(
                 data.get("target_refocus_interval_sec", 3.0)
             ),
+            target_repeat_mode=str(data.get("target_repeat_mode", "repeat")),
             saver_start_delay_sec=float(data.get("saver_start_delay_sec", 1.0)),
             notice_enabled=bool(data.get("notice_enabled", True)),
             admin_password=str(data.get("admin_password", "")),
@@ -1014,6 +1020,13 @@ class SaverWindow(QtWidgets.QWidget):
 
     def show_fullscreen(self):
         self.refresh()
+        if (self.cfg.saver_display_mode or "full") == "workarea":
+            screen = QtGui.QGuiApplication.primaryScreen()
+            if screen:
+                geometry = screen.availableGeometry()
+                self.setGeometry(geometry)
+                self.show()
+                return
         self.showFullScreen()
 
 
@@ -1429,10 +1442,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audio_relaunch_cooldown.setRange(1.0, 600.0)
         self.audio_relaunch_cooldown.setSingleStep(1.0)
         self.audio_relaunch_cooldown.setDecimals(2)
+        self.audio_repeat_mode = ModeSelector(
+            ["repeat", "once"],
+            labels={"repeat": "반복 실행", "once": "초기 1회 실행"},
+        )
         form.addRow(self._label("음원 URL"), audio_url_row)
         form.addRow(self._label("시작 창 모드"), self.audio_mode)
         form.addRow(self._label("시작 지연(초)"), self.audio_start_delay)
         form.addRow(self._label("재실행 쿨다운(초)"), self.audio_relaunch_cooldown)
+        form.addRow(self._label("실행 방식"), self.audio_repeat_mode)
         layout.addLayout(form)
 
     @staticmethod
@@ -1506,11 +1524,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.target_refocus_interval.setRange(1.0, 60.0)
         self.target_refocus_interval.setSingleStep(1.0)
         self.target_refocus_interval.setDecimals(2)
+        self.target_repeat_mode = ModeSelector(
+            ["repeat", "once"],
+            labels={"repeat": "반복 실행", "once": "초기 1회 실행"},
+        )
         form.addRow(self._label("URL"), target_url_row)
         form.addRow(self._label("시작 창 모드"), self.target_mode)
         form.addRow(self._label("시작 지연(초)"), self.target_start_delay)
         form.addRow(self._label("재실행 쿨다운(초)"), self.target_relaunch_cooldown)
         form.addRow(self._label("재포커스 간격(초)"), self.target_refocus_interval)
+        form.addRow(self._label("실행 방식"), self.target_repeat_mode)
         layout.addLayout(form)
 
     def _build_saver_section(self, layout: QtWidgets.QVBoxLayout):
@@ -1551,6 +1574,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.saver_start_delay.setDecimals(2)
 
         form.addRow(self._label("이미지 모드"), self.saver_mode)
+        self.saver_display_mode = ModeSelector(
+            ["full", "workarea"],
+            labels={"full": "전체 화면", "workarea": "작업 표시줄 유지"},
+        )
+        form.addRow(self._label("이미지 표시"), self.saver_display_mode)
         self.saver_path_label = self._label("이미지 경로")
         form.addRow(self.saver_path_label, self.saver_path_row)
         form.addRow(self._label("표시 대기(초)"), self.saver_idle_delay)
@@ -1816,6 +1844,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audio_mode.setCurrentText(cfg.audio_window_mode)
         self.audio_start_delay.setValue(cfg.audio_start_delay_sec)
         self.audio_relaunch_cooldown.setValue(cfg.audio_relaunch_cooldown_sec)
+        self.audio_repeat_mode.setCurrentText(cfg.audio_repeat_mode)
 
         self.target_enabled.setChecked(cfg.target_enabled)
         self.target_urls = list(cfg.urls or [cfg.url])
@@ -1824,9 +1853,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.target_start_delay.setValue(cfg.target_start_delay_sec)
         self.target_relaunch_cooldown.setValue(cfg.target_relaunch_cooldown_sec)
         self.target_refocus_interval.setValue(cfg.target_refocus_interval_sec)
+        self.target_repeat_mode.setCurrentText(cfg.target_repeat_mode)
 
         self.saver_enabled.setChecked(cfg.saver_enabled)
         self.saver_mode.setCurrentText(cfg.saver_image_mode)
+        self.saver_display_mode.setCurrentText(cfg.saver_display_mode)
         self.saver_image_path.setText(cfg.image_path)
         self._update_saver_path_controls(cfg.saver_image_mode)
         self.saver_idle_delay.setValue(cfg.idle_to_show_sec)
@@ -1862,17 +1893,20 @@ class MainWindow(QtWidgets.QMainWindow):
             chrome_repeat=self.cfg.chrome_repeat,
             ui_theme="accent",
             saver_image_mode=self.saver_mode.currentText(),
+            saver_display_mode=self.saver_display_mode.currentText(),
             audio_url=primary_audio,
             audio_urls=audio_urls or [primary_audio],
             audio_enabled=self.audio_enabled.isChecked(),
             audio_window_mode=self.audio_mode.currentText(),
             audio_start_delay_sec=self.audio_start_delay.value(),
             audio_relaunch_cooldown_sec=self.audio_relaunch_cooldown.value(),
+            audio_repeat_mode=self.audio_repeat_mode.currentText(),
             target_enabled=self.target_enabled.isChecked(),
             target_window_mode=target_mode,
             target_start_delay_sec=self.target_start_delay.value(),
             target_relaunch_cooldown_sec=self.target_relaunch_cooldown.value(),
             target_refocus_interval_sec=self.target_refocus_interval.value(),
+            target_repeat_mode=self.target_repeat_mode.currentText(),
             saver_start_delay_sec=self.saver_start_delay.value(),
             notice_enabled=self.notice_enabled.isChecked(),
             admin_password="",
@@ -1905,6 +1939,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.audio_mode,
             self.target_mode,
             self.saver_mode,
+            self.saver_display_mode,
+            self.audio_repeat_mode,
+            self.target_repeat_mode,
         ]:
             widget.currentTextChanged.connect(self._autosave)
         for widget in [
@@ -1964,6 +2001,7 @@ class AudioWorker:
         self.last_launch = 0.0
         self.pending_launch_at: Optional[float] = None
         self.last_config_signature: Optional[tuple] = None
+        self.once_launched = False
 
     def run(self):
         while True:
@@ -1974,6 +2012,7 @@ class AudioWorker:
                 self.cfg.audio_start_delay_sec,
                 self.cfg.audio_relaunch_cooldown_sec,
                 self.cfg.audio_enabled,
+                self.cfg.audio_repeat_mode,
             )
             if self.last_config_signature is None:
                 self.last_config_signature = config_signature
@@ -1983,12 +2022,17 @@ class AudioWorker:
                     self._stop_proc()
                     self.pending_launch_at = time.time() + self.cfg.audio_start_delay_sec
                     self.last_launch = 0.0
+                    self.once_launched = False
             if not self.cfg.audio_enabled:
                 self._stop_proc()
                 self.pending_launch_at = None
+                self.once_launched = False
                 time.sleep(self.cfg.poll_sec)
                 continue
             if self.proc is None or self.proc.poll() is not None:
+                if self.cfg.audio_repeat_mode == "once" and self.once_launched:
+                    time.sleep(self.cfg.poll_sec)
+                    continue
                 now = time.time()
                 if now - self.last_launch >= self.cfg.audio_relaunch_cooldown_sec:
                     if self.pending_launch_at is None:
@@ -2003,6 +2047,7 @@ class AudioWorker:
                     self.proc = launch_chrome([url], profile, self.cfg.audio_window_mode, True)
                     self.last_launch = time.time()
                     self.pending_launch_at = None
+                    self.once_launched = True
             time.sleep(max(self.cfg.poll_sec, 0.2))
 
     def _stop_proc(self):
@@ -2026,6 +2071,7 @@ class TargetWorker(QtCore.QObject):
         self.notice.closed.connect(self._dismiss_notice)
         self.notice_dismissed = False
         self.last_notice_enabled = self.cfg.notice_enabled
+        self.once_launched = False
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self._tick)
         self.timer.start(int(max(self.cfg.poll_sec, 0.2) * 1000))
@@ -2041,6 +2087,7 @@ class TargetWorker(QtCore.QObject):
             self.cfg.target_start_delay_sec,
             self.cfg.target_relaunch_cooldown_sec,
             self.cfg.target_enabled,
+            self.cfg.target_repeat_mode,
         )
         if self.last_config_signature is None:
             self.last_config_signature = config_signature
@@ -2050,6 +2097,7 @@ class TargetWorker(QtCore.QObject):
                 self._stop_proc()
                 self.pending_launch_at = time.time() + self.cfg.target_start_delay_sec
                 self.last_launch = 0.0
+                self.once_launched = False
         new_key = (self.cfg.accent_theme, self.cfg.accent_color)
         if new_key != self.palette_key:
             self.palette_key = new_key
@@ -2085,9 +2133,12 @@ class TargetWorker(QtCore.QObject):
         if not self.cfg.target_enabled:
             self._stop_proc()
             self.pending_launch_at = None
+            self.once_launched = False
             return
 
         if self.proc is None or self.proc.poll() is not None:
+            if self.cfg.target_repeat_mode == "once" and self.once_launched:
+                return
             now = time.time()
             if now - self.last_launch >= self.cfg.target_relaunch_cooldown_sec:
                 if self.pending_launch_at is None:
@@ -2107,10 +2158,14 @@ class TargetWorker(QtCore.QObject):
                 )
                 self.last_launch = time.time()
                 self.pending_launch_at = None
+                self.once_launched = True
 
         if self.proc and self.proc.poll() is None:
             now = time.time()
-            if now - self.last_refocus >= self.cfg.target_refocus_interval_sec:
+            if (
+                self.cfg.target_window_mode != "minimized"
+                and now - self.last_refocus >= self.cfg.target_refocus_interval_sec
+            ):
                 keep_window_on_top(self.proc.pid)
                 self.last_refocus = now
 
