@@ -3027,6 +3027,7 @@ class AudioWorker:
         self.pending_minimize_at: Optional[float] = None
         self.pending_restore_pid: Optional[int] = None
         self.pending_restore_at: Optional[float] = None
+        self.pending_restore_again_at: Optional[float] = None
         self.last_launch = 0.0
         self.pending_launch_at: Optional[float] = None
         self.last_config_signature: Optional[tuple] = None
@@ -3094,14 +3095,24 @@ class AudioWorker:
                     if self.proc and (self.cfg.audio_window_mode or "").lower() == "minimized":
                         self.pending_minimize_pid = self.proc.pid
                         self.pending_restore_pid = self.proc.pid
-                        self.pending_restore_at = time.time() + 0.8
-                        self.pending_minimize_at = time.time() + 3.0
+                        self.pending_restore_at = time.time() + 0.3
+                        self.pending_restore_again_at = time.time() + 1.2
+                        self.pending_minimize_at = time.time() + 5.0
             if self.pending_restore_pid and (self.cfg.audio_window_mode or "").lower() == "minimized":
                 if time.time() >= (self.pending_restore_at or 0):
                     if find_window_handles_by_pid(self.pending_restore_pid):
                         restore_window(self.pending_restore_pid)
                         self.pending_restore_pid = None
                         self.pending_restore_at = None
+            if (
+                self.pending_restore_again_at
+                and (self.cfg.audio_window_mode or "").lower() == "minimized"
+            ):
+                if time.time() >= self.pending_restore_again_at:
+                    pid = self.proc.pid if self.proc and self.proc.poll() is None else self.external_pid
+                    if pid and find_window_handles_by_pid(pid):
+                        restore_window(pid)
+                    self.pending_restore_again_at = None
             if self.pending_minimize_pid and (self.cfg.audio_window_mode or "").lower() == "minimized":
                 if time.time() >= (self.pending_minimize_at or 0):
                     if find_window_handles_by_pid(self.pending_minimize_pid):
@@ -3121,6 +3132,7 @@ class AudioWorker:
         self.pending_minimize_at = None
         self.pending_restore_pid = None
         self.pending_restore_at = None
+        self.pending_restore_again_at = None
         self.pending_launch_at = None
         self.pending_launch_at = None
 
