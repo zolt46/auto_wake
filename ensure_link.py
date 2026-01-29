@@ -929,6 +929,14 @@ class WarningDialog(QtWidgets.QDialog):
             return
         super().keyPressEvent(event)
 
+    def showEvent(self, event: QtGui.QShowEvent) -> None:
+        write_notice_state(WORK_DIR, ui_active=1.0)
+        super().showEvent(event)
+
+    def hideEvent(self, event: QtGui.QHideEvent) -> None:
+        write_notice_state(WORK_DIR, ui_active=0.0)
+        super().hideEvent(event)
+
 
 class PasswordDialog(QtWidgets.QDialog):
     def __init__(self, verifier, palette: dict, parent=None):
@@ -1008,6 +1016,14 @@ class PasswordDialog(QtWidgets.QDialog):
         self.input.returnPressed.connect(self._accept_with_validation)
         self.show()
         self.raise_()
+
+    def showEvent(self, event: QtGui.QShowEvent) -> None:
+        write_notice_state(WORK_DIR, ui_active=1.0)
+        super().showEvent(event)
+
+    def hideEvent(self, event: QtGui.QHideEvent) -> None:
+        write_notice_state(WORK_DIR, ui_active=0.0)
+        super().hideEvent(event)
         self.activateWindow()
         self.input.setFocus()
         self._warning_dialog = None
@@ -1089,13 +1105,15 @@ class NoticeWindow(QtWidgets.QWidget):
         super().__init__(parent)
         self.setObjectName("NoticeWindow")
         self.setWindowFlags(
-            QtCore.Qt.Window | QtCore.Qt.WindowTitleHint
+            QtCore.Qt.Window | QtCore.Qt.WindowTitleHint | QtCore.Qt.WindowStaysOnTopHint
         )
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, False)
         self.setAutoFillBackground(True)
         self.setWindowTitle("AutoWake 안내")
         self.palette = palette
         self.cfg = cfg
+        self._highlighted = False
+        self._interaction_locked = False
         self._build_ui()
         self._apply_palette()
         self.update_content(cfg)
@@ -1114,12 +1132,13 @@ class NoticeWindow(QtWidgets.QWidget):
         header_row = QtWidgets.QHBoxLayout()
         self.title_label = QtWidgets.QLabel(DEFAULT_NOTICE_TITLE)
         self.title_label.setObjectName("NoticeTitle")
-        close_button = QtWidgets.QPushButton("닫기")
-        close_button.clicked.connect(self.close)
-        close_button.setFixedWidth(80)
+        self.close_button = QtWidgets.QPushButton("닫기")
+        self.close_button.setObjectName("NoticeClose")
+        self.close_button.clicked.connect(self.close)
+        self.close_button.setFixedSize(120, 40)
         header_row.addWidget(self.title_label)
         header_row.addStretch()
-        header_row.addWidget(close_button)
+        header_row.addWidget(self.close_button)
         frame_layout.addLayout(header_row)
         self.image_label = QtWidgets.QLabel(alignment=QtCore.Qt.AlignCenter)
         self.image_label.setObjectName("NoticeImage")
@@ -1150,6 +1169,15 @@ class NoticeWindow(QtWidgets.QWidget):
                 border-radius: 16px;
                 border: none;
             }}
+            #NoticeClose {{
+                background: {palette['accent']};
+                color: #0b1220;
+                font-weight: 800;
+                border-radius: 10px;
+                padding: 6px 16px;
+                min-width: 120px;
+                min-height: 40px;
+            }}
             #NoticeTitle {{
                 color: {palette['text_primary']};
                 font-size: 18px;
@@ -1175,6 +1203,53 @@ class NoticeWindow(QtWidgets.QWidget):
                 ]
             )
         )
+
+    def _highlight_notice(self) -> None:
+        if self._highlighted:
+            return
+        self._highlighted = True
+        base_color = QtGui.QColor(self.palette["bg_card"])
+        highlight_color = base_color.lighter(115)
+        self.frame.setStyleSheet(
+            " ".join(
+                [
+                    f"background: {highlight_color.name()};",
+                    "border-radius: 16px;",
+                    "border: none;",
+                ]
+            )
+        )
+        self.close_button.setStyleSheet(
+            " ".join(
+                [
+                    "background: #fde047;",
+                    "color: #111827;",
+                    "font-weight: 900;",
+                    "border-radius: 10px;",
+                    "padding: 6px 16px;",
+                    "min-width: 120px;",
+                    "min-height: 40px;",
+                ]
+            )
+        )
+        QtCore.QTimer.singleShot(600, self._clear_highlight)
+
+    def _clear_highlight(self) -> None:
+        self._highlighted = False
+        self.close_button.setStyleSheet("")
+        self._apply_palette()
+        self._apply_frame_style()
+
+    def set_interaction_lock(self, locked: bool) -> None:
+        self._interaction_locked = locked
+        if not self.isVisible():
+            return
+        if locked:
+            self.grabMouse()
+            self.grabKeyboard()
+        else:
+            self.releaseMouse()
+            self.releaseKeyboard()
 
     def update_content(self, cfg: AppConfig) -> None:
         self.cfg = cfg
@@ -1229,7 +1304,10 @@ class NoticeWindow(QtWidgets.QWidget):
 
     def closeEvent(self, event: QtGui.QCloseEvent):
         self.closed.emit()
-        super().closeEvent(event)
+        self.releaseMouse()
+        self.releaseKeyboard()
+        self.hide()
+        event.ignore()
 
     def show_centered(self):
         screen = QtGui.QGuiApplication.primaryScreen()
@@ -1243,6 +1321,510 @@ class NoticeWindow(QtWidgets.QWidget):
             height,
         )
         self.show()
+        self.raise_()
+        self.activateWindow()
+        self.set_interaction_lock(True)
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if not self._interaction_locked:
+            super().mousePressEvent(event)
+            return
+        global_pos = event.globalPosition().toPoint()
+        if not self.geometry().contains(global_pos):
+            self._highlight_notice()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def hideEvent(self, event: QtGui.QHideEvent) -> None:
+        self.releaseMouse()
+        self.releaseKeyboard()
+        super().hideEvent(event)
+
+    def focusOutEvent(self, event: QtGui.QFocusEvent) -> None:
+        if self._interaction_locked:
+            self.raise_()
+            self.activateWindow()
+        super().focusOutEvent(event)
+
+
+class NoticePreviewWidget(QtWidgets.QFrame):
+    def __init__(self, palette: dict, cfg: AppConfig, parent=None):
+        super().__init__(parent)
+        self.palette = palette
+        self.cfg = cfg
+        self.setObjectName("NoticePreview")
+        self.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.setFrameShadow(QtWidgets.QFrame.Plain)
+        self.setLineWidth(0)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        self.title_label = QtWidgets.QLabel(DEFAULT_NOTICE_TITLE)
+        self.title_label.setObjectName("NoticePreviewTitle")
+        self.image_label = QtWidgets.QLabel(alignment=QtCore.Qt.AlignCenter)
+        self.image_label.setObjectName("NoticePreviewImage")
+        self.body_label = QtWidgets.QLabel()
+        self.body_label.setWordWrap(True)
+        self.body_label.setObjectName("NoticePreviewBody")
+        self.footer_label = QtWidgets.QLabel()
+        self.footer_label.setWordWrap(True)
+        self.footer_label.setObjectName("NoticePreviewFooter")
+        layout.addWidget(self.title_label)
+        layout.addWidget(self.image_label)
+        layout.addWidget(self.body_label)
+        layout.addWidget(self.footer_label)
+        layout.addStretch()
+        self._apply_palette()
+        self.apply_config(cfg)
+
+    def _apply_palette(self) -> None:
+        palette = self.palette
+        self.setStyleSheet(
+            f"""
+            #NoticePreview {{
+                background: {palette['bg_card']};
+                border-radius: 14px;
+                border: none;
+            }}
+            #NoticePreviewTitle {{
+                color: {palette['text_primary']};
+                font-size: 16px;
+                font-weight: 700;
+            }}
+            #NoticePreviewBody {{
+                color: {palette['text_muted']};
+            }}
+            #NoticePreviewFooter {{
+                color: {palette['text_muted']};
+            }}
+            """
+        )
+        self._apply_frame_style()
+
+    def _apply_frame_style(self) -> None:
+        return
+
+    def apply_config(self, cfg: AppConfig) -> None:
+        self.cfg = cfg
+        title, body, footer = build_notice_content(cfg)
+        self.title_label.setText(title)
+        self.body_label.setTextFormat(QtCore.Qt.PlainText)
+        self.footer_label.setTextFormat(QtCore.Qt.PlainText)
+        self.body_label.setText(body)
+        self.footer_label.setText(footer)
+        body_font = _build_notice_font(
+            cfg.notice_body_font_family,
+            cfg.notice_body_font_size,
+            cfg.notice_body_bold,
+            cfg.notice_body_italic,
+        )
+        footer_font = _build_notice_font(
+            cfg.notice_footer_font_family,
+            cfg.notice_footer_font_size,
+            cfg.notice_footer_bold,
+            cfg.notice_footer_italic,
+        )
+        self.body_label.setFont(body_font)
+        self.footer_label.setFont(footer_font)
+        self.body_label.setStyleSheet(_notice_style(body_font))
+        self.footer_label.setStyleSheet(_notice_style(footer_font))
+        self.body_label.setAlignment(_notice_alignment(cfg.notice_body_align))
+        self.footer_label.setAlignment(_notice_alignment(cfg.notice_footer_align))
+        self._apply_frame_style()
+        self._update_image()
+
+    def _update_image(self) -> None:
+        path = resolve_notice_image_path(self.cfg)
+        height = max(20, int(self.cfg.notice_image_height))
+        self.image_label.setFixedHeight(height)
+        if not path:
+            self.image_label.clear()
+            self.image_label.show()
+            return
+        pixmap = QtGui.QPixmap(path)
+        if pixmap.isNull():
+            self.image_label.clear()
+            self.image_label.show()
+            return
+        scaled = pixmap.scaledToHeight(height, QtCore.Qt.SmoothTransformation)
+        self.image_label.setPixmap(scaled)
+        self.image_label.show()
+
+
+class NoticeConfigDialog(QtWidgets.QDialog):
+    def __init__(self, palette: dict, cfg: AppConfig, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("안내 팝업 구성")
+        self.setModal(True)
+        self.setMinimumSize(980, 620)
+        self.palette = palette
+        self.cfg = cfg
+        self._build_ui()
+        self._load_config(cfg)
+        self._connect_signals()
+        self._update_preview()
+
+    def _build_ui(self) -> None:
+        layout = QtWidgets.QHBoxLayout(self)
+        preview_panel = QtWidgets.QWidget()
+        preview_layout = QtWidgets.QVBoxLayout(preview_panel)
+        preview_title = QtWidgets.QLabel("안내 팝업(축소형) 미리보기")
+        preview_title.setObjectName("CardTitle")
+        preview_layout.addWidget(preview_title)
+        self.preview = NoticePreviewWidget(self.palette, self.cfg)
+        self.preview.setMinimumWidth(360)
+        preview_layout.addWidget(self.preview, 1)
+        layout.addWidget(preview_panel, 1)
+
+        control_panel = QtWidgets.QWidget()
+        control_layout = QtWidgets.QVBoxLayout(control_panel)
+        control_layout.setContentsMargins(0, 0, 0, 0)
+
+        form = QtWidgets.QFormLayout()
+        self.notice_title = QtWidgets.QLineEdit()
+        form.addRow("제목", self.notice_title)
+
+        self.image_mode = QtWidgets.QComboBox()
+        self.image_mode.addItem("기본 이미지", "bundled")
+        self.image_mode.addItem("사용자 지정", "path")
+        self.image_mode.addItem("없음", "none")
+        form.addRow("상단 삽입 이미지", self.image_mode)
+
+        self.bundled_image = QtWidgets.QComboBox()
+        for name in NOTICE_BUNDLED_IMAGES:
+            self.bundled_image.addItem(NOTICE_BUNDLED_LABELS.get(name, name), name)
+        form.addRow("기본 이미지 선택", self.bundled_image)
+
+        path_row = QtWidgets.QWidget()
+        path_layout = QtWidgets.QHBoxLayout(path_row)
+        path_layout.setContentsMargins(0, 0, 0, 0)
+        self.image_path = QtWidgets.QLineEdit()
+        self.image_path_browse = QtWidgets.QPushButton("찾기")
+        self.image_path_browse.clicked.connect(self._browse_image)
+        path_layout.addWidget(self.image_path)
+        path_layout.addWidget(self.image_path_browse)
+        form.addRow("이미지 경로", path_row)
+
+        self.image_height = StepperInput()
+        self.image_height.setRange(20, 400)
+        self.image_height.setSingleStep(5)
+        self.image_height.setDecimals(0)
+        form.addRow("이미지 높이(px)", self.image_height)
+
+        self.body_text = QtWidgets.QTextEdit()
+        self.body_text.setMinimumHeight(120)
+        form.addRow("본문 내용", self.body_text)
+        body_row = QtWidgets.QHBoxLayout()
+        self.body_font_size = QtWidgets.QSpinBox()
+        self.body_font_size.setRange(9, 28)
+        self.body_font_size.setSingleStep(1)
+        self.body_bold = QtWidgets.QCheckBox("굵게")
+        self.body_italic = QtWidgets.QCheckBox("기울임")
+        self.body_font_family = QtWidgets.QComboBox()
+        self.body_font_family.addItems(NOTICE_FONT_FAMILIES)
+        self.body_font_family.setEditable(False)
+        self.body_align = QtWidgets.QComboBox()
+        self.body_align.addItem("왼쪽", "left")
+        self.body_align.addItem("가운데", "center")
+        self.body_align.addItem("오른쪽", "right")
+        font_row = QtWidgets.QHBoxLayout()
+        font_row.addWidget(QtWidgets.QLabel("글씨체"))
+        font_row.addWidget(self.body_font_family)
+        form.addRow("", font_row)
+        body_row.addWidget(QtWidgets.QLabel("글씨 크기"))
+        body_row.addWidget(self.body_font_size)
+        body_row.addSpacing(12)
+        body_row.addWidget(self.body_bold)
+        body_row.addWidget(self.body_italic)
+        body_row.addSpacing(12)
+        body_row.addWidget(QtWidgets.QLabel("정렬"))
+        body_row.addWidget(self.body_align)
+        body_row.addStretch()
+        form.addRow("", body_row)
+
+        self.footer_text = QtWidgets.QTextEdit()
+        self.footer_text.setMinimumHeight(120)
+        form.addRow("추가 내용", self.footer_text)
+        footer_row = QtWidgets.QHBoxLayout()
+        self.footer_font_size = QtWidgets.QSpinBox()
+        self.footer_font_size.setRange(9, 24)
+        self.footer_font_size.setSingleStep(1)
+        self.footer_bold = QtWidgets.QCheckBox("굵게")
+        self.footer_italic = QtWidgets.QCheckBox("기울임")
+        self.footer_font_family = QtWidgets.QComboBox()
+        self.footer_font_family.addItems(NOTICE_FONT_FAMILIES)
+        self.footer_font_family.setEditable(False)
+        self.footer_align = QtWidgets.QComboBox()
+        self.footer_align.addItem("왼쪽", "left")
+        self.footer_align.addItem("가운데", "center")
+        self.footer_align.addItem("오른쪽", "right")
+        footer_font_row = QtWidgets.QHBoxLayout()
+        footer_font_row.addWidget(QtWidgets.QLabel("글씨체"))
+        footer_font_row.addWidget(self.footer_font_family)
+        form.addRow("", footer_font_row)
+        frame_row = QtWidgets.QHBoxLayout()
+        self.frame_color_button = QtWidgets.QPushButton("검은 영역 색상")
+        self.frame_color_button.clicked.connect(self._pick_frame_color)
+        self.frame_padding = StepperInput()
+        self.frame_padding.setRange(0, 80)
+        self.frame_padding.setSingleStep(2)
+        self.frame_padding.setDecimals(0)
+        frame_row.addWidget(self.frame_color_button)
+        frame_row.addSpacing(12)
+        frame_row.addWidget(QtWidgets.QLabel("검은 영역 두께"))
+        frame_row.addWidget(self.frame_padding)
+        frame_row.addStretch()
+        form.addRow("", frame_row)
+        footer_row.addWidget(QtWidgets.QLabel("글씨 크기"))
+        footer_row.addWidget(self.footer_font_size)
+        footer_row.addSpacing(12)
+        footer_row.addWidget(self.footer_bold)
+        footer_row.addWidget(self.footer_italic)
+        footer_row.addSpacing(12)
+        footer_row.addWidget(QtWidgets.QLabel("정렬"))
+        footer_row.addWidget(self.footer_align)
+        footer_row.addStretch()
+        form.addRow("", footer_row)
+
+        control_layout.addLayout(form)
+        control_layout.addStretch()
+
+        button_row = QtWidgets.QHBoxLayout()
+        self.export_button = QtWidgets.QPushButton("내보내기")
+        self.import_button = QtWidgets.QPushButton("불러오기")
+        self.save_button = QtWidgets.QPushButton("저장")
+        self.cancel_button = QtWidgets.QPushButton("취소")
+        self.export_button.clicked.connect(self._export_config)
+        self.import_button.clicked.connect(self._import_config)
+        self.save_button.clicked.connect(self.accept)
+        self.cancel_button.clicked.connect(self.reject)
+        button_row.addWidget(self.export_button)
+        button_row.addWidget(self.import_button)
+        button_row.addStretch()
+        button_row.addWidget(self.cancel_button)
+        button_row.addWidget(self.save_button)
+        control_layout.addLayout(button_row)
+
+        layout.addWidget(control_panel, 2)
+
+    def _connect_signals(self) -> None:
+        self.notice_title.textChanged.connect(self._update_preview)
+        self.image_mode.currentIndexChanged.connect(self._handle_image_mode)
+        self.bundled_image.currentIndexChanged.connect(self._update_preview)
+        self.image_path.textChanged.connect(self._update_preview)
+        self.image_height.valueChanged.connect(self._update_preview)
+        self.body_text.textChanged.connect(self._update_preview)
+        self.body_font_size.valueChanged.connect(self._update_preview)
+        self.body_bold.stateChanged.connect(self._update_preview)
+        self.body_italic.stateChanged.connect(self._update_preview)
+        self.body_font_family.currentIndexChanged.connect(self._update_preview)
+        self.body_align.currentIndexChanged.connect(self._update_preview)
+        self.footer_text.textChanged.connect(self._update_preview)
+        self.footer_font_size.valueChanged.connect(self._update_preview)
+        self.footer_bold.stateChanged.connect(self._update_preview)
+        self.footer_italic.stateChanged.connect(self._update_preview)
+        self.footer_font_family.currentIndexChanged.connect(self._update_preview)
+        self.footer_align.currentIndexChanged.connect(self._update_preview)
+        self.frame_padding.valueChanged.connect(self._update_preview)
+
+    def _load_config(self, cfg: AppConfig) -> None:
+        self.notice_title.setText(cfg.notice_title)
+        mode = (cfg.notice_image_mode or DEFAULT_NOTICE_IMAGE_MODE).lower()
+        index = self.image_mode.findData(mode)
+        if index >= 0:
+            self.image_mode.setCurrentIndex(index)
+        bundled_index = self.bundled_image.findData(cfg.notice_bundled_image)
+        if bundled_index >= 0:
+            self.bundled_image.setCurrentIndex(bundled_index)
+        self.image_path.setText(cfg.notice_image_path)
+        self.image_height.setValue(float(cfg.notice_image_height))
+        self.body_text.setPlainText(cfg.notice_body)
+        self.body_font_size.setValue(int(cfg.notice_body_font_size))
+        self.body_bold.setChecked(bool(cfg.notice_body_bold))
+        self.body_italic.setChecked(bool(cfg.notice_body_italic))
+        body_font_index = self.body_font_family.findText(cfg.notice_body_font_family)
+        if body_font_index >= 0:
+            self.body_font_family.setCurrentIndex(body_font_index)
+        body_align_index = self.body_align.findData(cfg.notice_body_align)
+        if body_align_index >= 0:
+            self.body_align.setCurrentIndex(body_align_index)
+        self.footer_text.setPlainText(cfg.notice_footer)
+        self.footer_font_size.setValue(int(cfg.notice_footer_font_size))
+        self.footer_bold.setChecked(bool(cfg.notice_footer_bold))
+        self.footer_italic.setChecked(bool(cfg.notice_footer_italic))
+        footer_font_index = self.footer_font_family.findText(cfg.notice_footer_font_family)
+        if footer_font_index >= 0:
+            self.footer_font_family.setCurrentIndex(footer_font_index)
+        footer_align_index = self.footer_align.findData(cfg.notice_footer_align)
+        if footer_align_index >= 0:
+            self.footer_align.setCurrentIndex(footer_align_index)
+        self.frame_padding.setValue(float(cfg.notice_frame_padding))
+        self._update_frame_color_button(cfg.notice_frame_color)
+        self._handle_image_mode()
+
+    def _handle_image_mode(self) -> None:
+        mode = self.image_mode.currentData()
+        is_bundled = mode == "bundled"
+        is_path = mode == "path"
+        self.bundled_image.setVisible(is_bundled)
+        self.image_path.setEnabled(is_path)
+        self.image_path_browse.setEnabled(is_path)
+        self._update_preview()
+
+    def _frame_color_value(self) -> str:
+        return getattr(self, "_frame_color_value_hex", "") or ""
+
+    def _update_frame_color_button(self, color_hex: str) -> None:
+        if not color_hex:
+            color_hex = "#0f172a"
+        self._frame_color_value_hex = color_hex
+        self.frame_color_button.setStyleSheet(
+            " ".join(
+                [
+                    f"background: {color_hex};",
+                    "color: #0b1220;",
+                    "border-radius: 10px;",
+                    "padding: 6px 12px;",
+                    "font-weight: 700;",
+                ]
+            )
+        )
+
+    def _pick_frame_color(self) -> None:
+        current = self._frame_color_value() or "#0f172a"
+        dialog = QtWidgets.QColorDialog(QtGui.QColor(current), self)
+        dialog.setOption(QtWidgets.QColorDialog.ShowAlphaChannel, False)
+        dialog.setOption(QtWidgets.QColorDialog.DontUseNativeDialog, True)
+        dialog.currentColorChanged.connect(
+            lambda color: self._update_frame_color_button(color.name())
+        )
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            self._update_frame_color_button(dialog.currentColor().name())
+            self._update_preview()
+
+    def _browse_image(self) -> None:
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "이미지 선택",
+            self.image_path.text() or os.path.expanduser("~"),
+            "이미지 파일 (*.png *.jpg *.jpeg *.bmp *.gif)",
+        )
+        if path:
+            self.image_path.setText(path)
+
+    def _export_config(self) -> None:
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "안내 팝업 내보내기",
+            os.path.expanduser("~"),
+            "JSON 파일 (*.json)",
+        )
+        if not path:
+            return
+        data = self._build_notice_config()
+        try:
+            with open(path, "w", encoding="utf-8") as file:
+                json.dump(data, file, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            log(f"NOTICE export error: {exc}")
+
+    def _import_config(self) -> None:
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "안내 팝업 불러오기",
+            os.path.expanduser("~"),
+            "JSON 파일 (*.json)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                data = json.load(file)
+        except Exception as exc:
+            log(f"NOTICE import error: {exc}")
+            return
+        cfg = replace(
+            self.cfg,
+            notice_title=str(data.get("notice_title", DEFAULT_NOTICE_TITLE)),
+            notice_body=str(data.get("notice_body", DEFAULT_NOTICE_BODY)),
+            notice_footer=str(data.get("notice_footer", DEFAULT_NOTICE_FOOTER)),
+            notice_body_font_size=int(data.get("notice_body_font_size", 13)),
+            notice_body_bold=bool(data.get("notice_body_bold", False)),
+            notice_body_italic=bool(data.get("notice_body_italic", False)),
+            notice_body_align=str(data.get("notice_body_align", "left")),
+            notice_body_font_family=str(data.get("notice_body_font_family", "Noto Sans KR")),
+            notice_footer_font_size=int(data.get("notice_footer_font_size", 12)),
+            notice_footer_bold=bool(data.get("notice_footer_bold", False)),
+            notice_footer_italic=bool(data.get("notice_footer_italic", False)),
+            notice_footer_align=str(data.get("notice_footer_align", "left")),
+            notice_footer_font_family=str(data.get("notice_footer_font_family", "Noto Sans KR")),
+            notice_frame_color=str(data.get("notice_frame_color", "#0f172a")),
+            notice_frame_padding=int(data.get("notice_frame_padding", 24)),
+            notice_image_mode=str(data.get("notice_image_mode", DEFAULT_NOTICE_IMAGE_MODE)),
+            notice_image_path=str(data.get("notice_image_path", DEFAULT_NOTICE_IMAGE_PATH)),
+            notice_bundled_image=str(
+                data.get("notice_bundled_image", DEFAULT_NOTICE_BUNDLED_IMAGE)
+            ),
+            notice_image_height=int(data.get("notice_image_height", DEFAULT_NOTICE_IMAGE_HEIGHT)),
+        )
+        self._load_config(cfg)
+
+    def _build_notice_config(self) -> dict:
+        return {
+            "notice_title": self.notice_title.text().strip() or DEFAULT_NOTICE_TITLE,
+            "notice_body": _normalize_notice_text(
+                self.body_text.toPlainText(), DEFAULT_NOTICE_BODY
+            ),
+            "notice_footer": _normalize_notice_text(
+                self.footer_text.toPlainText(), DEFAULT_NOTICE_FOOTER
+            ),
+            "notice_body_font_size": int(self.body_font_size.value()),
+            "notice_body_bold": bool(self.body_bold.isChecked()),
+            "notice_body_italic": bool(self.body_italic.isChecked()),
+            "notice_body_align": str(self.body_align.currentData()),
+            "notice_body_font_family": self.body_font_family.currentText(),
+            "notice_footer_font_size": int(self.footer_font_size.value()),
+            "notice_footer_bold": bool(self.footer_bold.isChecked()),
+            "notice_footer_italic": bool(self.footer_italic.isChecked()),
+            "notice_footer_align": str(self.footer_align.currentData()),
+            "notice_footer_font_family": self.footer_font_family.currentText(),
+            "notice_frame_color": self._frame_color_value(),
+            "notice_frame_padding": int(self.frame_padding.value()),
+            "notice_image_mode": str(self.image_mode.currentData()),
+            "notice_image_path": self.image_path.text().strip(),
+            "notice_bundled_image": str(self.bundled_image.currentData()),
+            "notice_image_height": int(self.image_height.value()),
+        }
+
+    def _update_preview(self) -> None:
+        config = self._build_notice_config()
+        preview_cfg = replace(
+            self.cfg,
+            notice_title=config["notice_title"],
+            notice_body=config["notice_body"],
+            notice_footer=config["notice_footer"],
+            notice_body_font_size=config["notice_body_font_size"],
+            notice_body_bold=config["notice_body_bold"],
+            notice_body_italic=config["notice_body_italic"],
+            notice_body_align=config["notice_body_align"],
+            notice_body_font_family=config["notice_body_font_family"],
+            notice_footer_font_size=config["notice_footer_font_size"],
+            notice_footer_bold=config["notice_footer_bold"],
+            notice_footer_italic=config["notice_footer_italic"],
+            notice_footer_align=config["notice_footer_align"],
+            notice_footer_font_family=config["notice_footer_font_family"],
+            notice_frame_color=config["notice_frame_color"],
+            notice_frame_padding=config["notice_frame_padding"],
+            notice_image_mode=config["notice_image_mode"],
+            notice_image_path=config["notice_image_path"],
+            notice_bundled_image=config["notice_bundled_image"],
+            notice_image_height=config["notice_image_height"],
+        )
+        self.preview.apply_config(preview_cfg)
+
+    def get_notice_config(self) -> dict:
+        return self._build_notice_config()
 
 
 class NoticePreviewWidget(QtWidgets.QFrame):
@@ -2492,7 +3074,14 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self.cfg.password_hash:
             self.cfg.password_hash, self.cfg.password_salt = create_password_hash("0000")
             self.cfg.admin_password = ""
-            save_config(self.cfg)
+
+    def showEvent(self, event: QtGui.QShowEvent) -> None:
+        write_notice_state(self.cfg.work_dir, ui_active=1.0)
+        super().showEvent(event)
+
+    def hideEvent(self, event: QtGui.QHideEvent) -> None:
+        write_notice_state(self.cfg.work_dir, ui_active=0.0)
+        super().hideEvent(event)
 
     def _change_password(self):
         dialog = PasswordChangeDialog(self.palette, self)
@@ -2935,7 +3524,10 @@ class AudioWorker:
                     url = ensure_youtube_autoplay(random.choice(candidates))
                     profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "audio")
                     os.makedirs(profile, exist_ok=True)
-                    self.proc = launch_chrome([url], profile, self.cfg.audio_window_mode, True)
+                    launch_mode = self.cfg.audio_window_mode
+                    if (launch_mode or "").lower() == "minimized":
+                        launch_mode = "normal"
+                    self.proc = launch_chrome([url], profile, launch_mode, True)
                     self.last_launch = time.time()
                     self.pending_launch_at = None
                     self.once_launched = True
@@ -3035,6 +3627,7 @@ class TargetWorker(QtCore.QObject):
         state = read_notice_state(self.cfg.work_dir)
         audio_launch_at = float(state.get("audio_launch_at", 0.0))
         target_launch_at = float(state.get("target_launch_at", 0.0))
+        ui_active = float(state.get("ui_active", 0.0)) > 0.5
         if audio_launch_at > self.last_audio_launch_at:
             self.notice_dismissed = False
             self.last_audio_launch_at = audio_launch_at
@@ -3045,8 +3638,7 @@ class TargetWorker(QtCore.QObject):
         if self.cfg.notice_enabled and not self.notice_dismissed:
             if not self.notice.isVisible():
                 self.notice.show_centered()
-            self.notice.raise_()
-            self.notice.activateWindow()
+            self.notice.set_interaction_lock(not ui_active)
         else:
             self.notice.hide()
 
@@ -3202,6 +3794,7 @@ def run_audio_worker():
 def run_target_worker():
     ensure_streams()
     app = QtWidgets.QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
     worker = TargetWorker()
     app.aboutToQuit.connect(worker.notice.close)
     app.exec()
