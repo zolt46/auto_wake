@@ -65,7 +65,7 @@ APP_LOGO_PATH = os.path.join("assets", "logo.png")
 APP_NAME = "AutoWake"
 APP_VERSION = "1.0.0"
 AUTHOR_NAME = "Zolt46 / PSW / Emanon108"
-BUILD_DATE = "2025-01-01"
+BUILD_DATE = "2026-01-30"
 
 CHROME_CANDIDATES = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -908,12 +908,12 @@ class EasterEggDialog(QtWidgets.QDialog):
             icon_label.setPixmap(icon.pixmap(64, 64))
             layout.addWidget(icon_label)
         ascii_art = r"""
- █████╗ ██╗   ██╗████████╗ ██████╗ ██╗    ██╗ █████╗ ██╗  ██╗
-██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗██║    ██║██╔══██╗██║ ██╔╝
-███████║██║   ██║   ██║   ██║   ██║██║ █╗ ██║███████║█████╔╝ 
-██╔══██║██║   ██║   ██║   ██║   ██║██║███╗██║██╔══██║██╔═██╗ 
-██║  ██║╚██████╔╝   ██║   ╚██████╔╝╚███╔███╔╝██║  ██║██║  ██╗
-╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝  ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝
+ █████╗ ██╗   ██╗████████╗ ██████╗ ██╗    ██╗ █████╗ ██╗  ██╗███████╗
+██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗██║    ██║██╔══██╗██║ ██╔╝██╔════╝
+███████║██║   ██║   ██║   ██║   ██║██║ █╗ ██║███████║█████╔╝ █████╗  
+██╔══██║██║   ██║   ██║   ██║   ██║██║███╗██║██╔══██║██╔═██╗ ██╔══╝  
+██║  ██║╚██████╔╝   ██║   ╚██████╔╝╚███╔███╔╝██║  ██║██║  ██╗███████╗
+╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝  ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝
         """.strip("\n")
         label = QtWidgets.QLabel(
             "<pre style='color:#2FF5C9; font-family: "
@@ -926,7 +926,7 @@ class EasterEggDialog(QtWidgets.QDialog):
         layout.addWidget(label)
         message = QtWidgets.QLabel(
             "숨은 공방을 찾아내셨군요!\n"
-            "조용히 깨어나는 자동화의 순간을 위해,\n"
+            "부드럽게 시작되는 자동화의 순간을 위해,\n"
             "AutoWake가 오늘도 함께합니다."
         )
         message.setAlignment(QtCore.Qt.AlignCenter)
@@ -934,8 +934,8 @@ class EasterEggDialog(QtWidgets.QDialog):
         message.setProperty("popup-role", "body")
         layout.addWidget(message)
         quote = QtWidgets.QLabel(
-            "<i>“좋은 하루는 조용한 깨움에서 시작됩니다.”<br>"
-            "— AutoWake Studio 비밀 노트</i>"
+            "<i>“좋은 하루는 자연스러운 깨움에서 시작됩니다.”<br>"
+            "— AutoWake 비밀 노트</i>"
         )
         quote.setAlignment(QtCore.Qt.AlignCenter)
         quote.setProperty("popup-role", "hint")
@@ -1619,12 +1619,17 @@ class NoticeConfigDialog(QtWidgets.QDialog):
                     f"QWidget {{ background: {self.palette['dialog_bg']};",
                     f"color: {self.palette['dialog_text']}; }}",
                     f"QLabel, QCheckBox, QRadioButton {{ color: {self.palette['dialog_text']};",
-                    "font-size: 13px; }}",
+                    "font-size: 14px; }}",
                     f"QGroupBox {{ background: {self.palette['dialog_bg']};",
                     f"border: 1px solid {self.palette['dialog_border']};",
                     "border-radius: 12px; margin-top: 10px; padding: 8px; }}",
                     "QGroupBox::title { subcontrol-origin: margin; left: 12px;",
-                    "padding: 0 6px; font-size: 13px; font-weight: 600; }",
+                    "padding: 0 6px; font-size: 14px; font-weight: 700; }",
+                    f"QCheckBox::indicator {{ width: 16px; height: 16px; }}",
+                    f"QCheckBox::indicator:unchecked {{ border: 1px solid {self.palette['dialog_border']};",
+                    f"background: {self.palette['bg_card']}; border-radius: 4px; }}",
+                    f"QCheckBox::indicator:checked {{ border: 1px solid {self.palette['accent']};",
+                    f"background: {self.palette['accent']}; border-radius: 4px; }}",
                 ]
             )
         )
@@ -2784,7 +2789,7 @@ class MainWindow(QtWidgets.QMainWindow):
         grid.addRow("제작 날짜", QtWidgets.QLabel(BUILD_DATE))
         grid.addRow(
             "저작권",
-            QtWidgets.QLabel("© 2025 Zolt46 / PSW / Emanon108. All rights reserved."),
+            QtWidgets.QLabel("© 2026 Zolt46 / PSW / Emanon108. All rights reserved."),
         )
         grid.addRow("문의", QtWidgets.QLabel("다산정보관 참고자료실 데스크"))
         grid_widget = QtWidgets.QWidget()
@@ -3496,8 +3501,8 @@ class TargetWorker(QtCore.QObject):
         saver_trigger_at = float(state.get("saver_trigger_at", 0.0))
         if saver_trigger_at > self.last_saver_trigger_at:
             self.last_saver_trigger_at = saver_trigger_at
-            if not self.notice_dismissed:
-                self.pending_notice_after_saver = True
+            self.pending_notice_after_saver = True
+            self.notice_dismissed = False
 
         dismissed_at = float(state.get("notice_dismissed_at", 0.0))
         if (
