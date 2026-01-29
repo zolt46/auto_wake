@@ -3044,6 +3044,7 @@ class TargetWorker(QtCore.QObject):
             now = time.time()
             if (
                 self.cfg.target_window_mode != "minimized"
+                and not self.notice.isVisible()
                 and now - self.last_refocus >= self.cfg.target_refocus_interval_sec
             ):
                 keep_window_on_top(self._current_pid())
