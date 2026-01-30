@@ -126,6 +126,18 @@ def log(msg: str) -> None:
         file.write(f"{datetime.now()} - {msg}\n")
 
 
+def set_system_volume(percent: float) -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        value = max(0, min(100, int(percent)))
+        volume = int((value / 100) * 0xFFFF)
+        packed = volume | (volume << 16)
+        ctypes.windll.winmm.waveOutSetVolume(0, packed)
+    except Exception as exc:
+        log(f"VOLUME set error: {exc}")
+
+
 def ensure_streams() -> None:
     if sys.stdout is None:
         sys.stdout = open(os.devnull, "w", encoding="utf-8")
@@ -203,6 +215,8 @@ class AppConfig:
     audio_start_delay_sec: float = 2.0
     audio_relaunch_cooldown_sec: float = 10.0
     audio_repeat_mode: str = "repeat"
+    audio_start_volume: int = 50
+    audio_minimize_delay_sec: float = 8.0
     target_enabled: bool = True
     target_window_mode: str = "fullscreen"
     target_start_delay_sec: float = 1.0
@@ -281,6 +295,8 @@ class AppConfig:
                 data.get("audio_relaunch_cooldown_sec", 10.0)
             ),
             audio_repeat_mode=str(data.get("audio_repeat_mode", "repeat")),
+            audio_start_volume=int(data.get("audio_start_volume", 50)),
+            audio_minimize_delay_sec=float(data.get("audio_minimize_delay_sec", 8.0)),
             target_enabled=bool(data.get("target_enabled", True)),
             target_window_mode=data.get("target_window_mode", inferred_mode),
             target_start_delay_sec=float(data.get("target_start_delay_sec", 1.0)),
@@ -2596,6 +2612,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audio_relaunch_cooldown.setRange(1.0, 6000.0)
         self.audio_relaunch_cooldown.setSingleStep(1.0)
         self.audio_relaunch_cooldown.setDecimals(2)
+        self.audio_start_volume = StepperInput()
+        self.audio_start_volume.setRange(0, 100)
+        self.audio_start_volume.setSingleStep(5)
+        self.audio_start_volume.setDecimals(0)
+        self.audio_minimize_delay = StepperInput()
+        self.audio_minimize_delay.setRange(1.0, 30.0)
+        self.audio_minimize_delay.setSingleStep(0.5)
+        self.audio_minimize_delay.setDecimals(2)
         self.audio_repeat_mode = ModeSelector(
             ["repeat", "once"],
             labels={"repeat": "반복 실행", "once": "초기 1회 실행"},
@@ -2603,6 +2627,8 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow(self._label("음원 URL"), audio_url_row)
         form.addRow(self._label("시작 창 모드"), self.audio_mode)
         form.addRow(self._label("시작 지연(초)"), self.audio_start_delay)
+        form.addRow(self._label("자동 재생 대기(초)"), self.audio_minimize_delay)
+        form.addRow(self._label("시작 볼륨(%)"), self.audio_start_volume)
         form.addRow(self._label("재실행 쿨다운(초)"), self.audio_relaunch_cooldown)
         form.addRow(self._label("실행 방식"), self.audio_repeat_mode)
         layout.addLayout(form)
@@ -3085,6 +3111,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_audio_url_display()
         self.audio_mode.setCurrentText(cfg.audio_window_mode)
         self.audio_start_delay.setValue(cfg.audio_start_delay_sec)
+        self.audio_minimize_delay.setValue(cfg.audio_minimize_delay_sec)
+        self.audio_start_volume.setValue(int(cfg.audio_start_volume))
         self.audio_relaunch_cooldown.setValue(cfg.audio_relaunch_cooldown_sec)
         self.audio_repeat_mode.setCurrentText(cfg.audio_repeat_mode)
 
@@ -3141,6 +3169,8 @@ class MainWindow(QtWidgets.QMainWindow):
             audio_enabled=self.audio_enabled.isChecked(),
             audio_window_mode=self.audio_mode.currentText(),
             audio_start_delay_sec=self.audio_start_delay.value(),
+            audio_minimize_delay_sec=self.audio_minimize_delay.value(),
+            audio_start_volume=int(self.audio_start_volume.value()),
             audio_relaunch_cooldown_sec=self.audio_relaunch_cooldown.value(),
             audio_repeat_mode=self.audio_repeat_mode.currentText(),
             target_enabled=self.target_enabled.isChecked(),
@@ -3247,6 +3277,8 @@ class MainWindow(QtWidgets.QMainWindow):
             widget.currentTextChanged.connect(self._autosave)
         for widget in [
             self.audio_start_delay,
+            self.audio_minimize_delay,
+            self.audio_start_volume,
             self.audio_relaunch_cooldown,
             self.target_start_delay,
             self.target_relaunch_cooldown,
@@ -3376,6 +3408,7 @@ class AudioWorker:
                     launch_mode = self.cfg.audio_window_mode
                     if (launch_mode or "").lower() == "minimized":
                         launch_mode = "normal"
+                    set_system_volume(self.cfg.audio_start_volume)
                     self.proc = launch_chrome([url], profile, launch_mode, True, True)
                     self.last_launch = time.time()
                     self.pending_launch_at = None
@@ -3385,7 +3418,8 @@ class AudioWorker:
                         self.pending_restore_pid = self.proc.pid
                         self.pending_restore_at = time.time() + 0.3
                         self.pending_restore_again_at = time.time() + 1.2
-                        self.pending_minimize_at = time.time() + 5.0
+                        minimize_delay = max(1.0, float(self.cfg.audio_minimize_delay_sec))
+                        self.pending_minimize_at = time.time() + minimize_delay
             if self.pending_restore_pid and (self.cfg.audio_window_mode or "").lower() == "minimized":
                 if time.time() >= (self.pending_restore_at or 0):
                     if find_window_handles_by_pid(self.pending_restore_pid):
