@@ -63,8 +63,8 @@ NOTICE_STATE_FILE = "notice_state.json"
 APP_ICON_PATH = os.path.join("assets", "icon.png")
 APP_LOGO_PATH = os.path.join("assets", "logo.png")
 APP_NAME = "AutoWake"
-APP_VERSION = "1.0.0"
-AUTHOR_NAME = "Zolt46 / PSW / Emanon108"
+APP_VERSION = "1.0.1"
+AUTHOR_NAME = "Zolt46 - PSW - Emanon108"
 BUILD_DATE = "2026-01-30"
 
 CHROME_CANDIDATES = [
@@ -917,7 +917,7 @@ class EasterEggDialog(QtWidgets.QDialog):
         """.strip("\n")
         label = QtWidgets.QLabel(
             "<pre style='color:#2FF5C9; font-family: "
-            "Cascadia Code, Consolas, monospace; font-size: 14px; font-weight:600;'>"
+            "Cascadia Code, Consolas, monospace; font-size: 15px; font-weight:700;'>"
             f"{html.escape(ascii_art)}"
             "</pre>"
         )
@@ -932,6 +932,7 @@ class EasterEggDialog(QtWidgets.QDialog):
         message.setAlignment(QtCore.Qt.AlignCenter)
         message.setWordWrap(True)
         message.setProperty("popup-role", "body")
+        message.setStyleSheet("font-size: 14px; font-weight: 600;")
         layout.addWidget(message)
         quote = QtWidgets.QLabel(
             "<i>“좋은 하루는 자연스러운 시작에서 비롯됩니다.”<br>"
@@ -939,6 +940,7 @@ class EasterEggDialog(QtWidgets.QDialog):
         )
         quote.setAlignment(QtCore.Qt.AlignCenter)
         quote.setProperty("popup-role", "hint")
+        quote.setStyleSheet("font-size: 14px; font-weight: 600;")
         layout.addWidget(quote)
 
 
@@ -1210,7 +1212,7 @@ class PasswordChangeDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("비밀번호 변경")
         self.setModal(True)
-        self.setFixedSize(360, 220)
+        self.setMinimumSize(420, 260)
         self.setStyleSheet(
             " ".join(
                 [
@@ -1226,7 +1228,11 @@ class PasswordChangeDialog(QtWidgets.QDialog):
             )
         )
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(QtWidgets.QLabel("현재 비밀번호와 새 비밀번호를 입력하세요."))
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(14)
+        description = QtWidgets.QLabel("현재 비밀번호와 새 비밀번호를 입력하세요.")
+        description.setWordWrap(True)
+        layout.addWidget(description)
 
         form = QtWidgets.QFormLayout()
         form.setRowWrapPolicy(QtWidgets.QFormLayout.WrapAllRows)
@@ -1234,28 +1240,7 @@ class PasswordChangeDialog(QtWidgets.QDialog):
         form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
         form.setFormAlignment(QtCore.Qt.AlignTop)
         form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(12)
-        form.setRowWrapPolicy(QtWidgets.QFormLayout.WrapAllRows)
-        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
-        form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.setFormAlignment(QtCore.Qt.AlignTop)
-        form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(12)
-        form.setRowWrapPolicy(QtWidgets.QFormLayout.WrapAllRows)
-        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
-        form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.setFormAlignment(QtCore.Qt.AlignTop)
-        form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(12)
-        form.setRowWrapPolicy(QtWidgets.QFormLayout.WrapAllRows)
-        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
-        form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.setFormAlignment(QtCore.Qt.AlignTop)
-        form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(12)
-        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
-        form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.setFormAlignment(QtCore.Qt.AlignTop)
+        form.setVerticalSpacing(10)
         self.current_password = QtWidgets.QLineEdit()
         self.current_password.setEchoMode(QtWidgets.QLineEdit.Password)
         self.new_password = QtWidgets.QLineEdit()
@@ -2608,7 +2593,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audio_start_delay.setSingleStep(0.5)
         self.audio_start_delay.setDecimals(2)
         self.audio_relaunch_cooldown = StepperInput()
-        self.audio_relaunch_cooldown.setRange(1.0, 600.0)
+        self.audio_relaunch_cooldown.setRange(1.0, 6000.0)
         self.audio_relaunch_cooldown.setSingleStep(1.0)
         self.audio_relaunch_cooldown.setDecimals(2)
         self.audio_repeat_mode = ModeSelector(
@@ -2691,7 +2676,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.target_start_delay.setSingleStep(0.5)
         self.target_start_delay.setDecimals(2)
         self.target_relaunch_cooldown = StepperInput()
-        self.target_relaunch_cooldown.setRange(1.0, 600.0)
+        self.target_relaunch_cooldown.setRange(1.0, 6000.0)
         self.target_relaunch_cooldown.setSingleStep(1.0)
         self.target_relaunch_cooldown.setDecimals(2)
         self.target_repeat_mode = ModeSelector(
@@ -2811,7 +2796,7 @@ class MainWindow(QtWidgets.QMainWindow):
         grid.addRow("제작 날짜", QtWidgets.QLabel(BUILD_DATE))
         grid.addRow(
             "저작권",
-            QtWidgets.QLabel("© 2026 Zolt46 / PSW / Emanon108. All rights reserved."),
+            QtWidgets.QLabel("© 2026 Zolt46 - PSW - Emanon108. All rights reserved."),
         )
         grid.addRow("문의", QtWidgets.QLabel("다산정보관 참고자료실 데스크"))
         grid_widget = QtWidgets.QWidget()
