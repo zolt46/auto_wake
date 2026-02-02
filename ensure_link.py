@@ -3951,39 +3951,39 @@ class AudioWorker:
                 if now - self.last_launch >= self.cfg.audio_relaunch_cooldown_sec:
                     if self.pending_launch_at is None:
                         self.pending_launch_at = now + self.cfg.audio_start_delay_sec
-        if self.pending_launch_at is not None:
-            now = time.time()
-            if now >= self.pending_launch_at:
-                launch_mode = (self.cfg.audio_launch_mode or "chrome").lower()
-                if launch_mode == "pwa" and self.cfg.audio_pwa_app_id:
-                    browser_hint = self.cfg.audio_pwa_browser_hint or self.pwa_browser_hint
-                    candidates = self.cfg.audio_urls or [self.cfg.audio_url]
-                    url = ensure_youtube_autoplay(random.choice(candidates))
-                    self.proc = launch_pwa(
-                        self.cfg.audio_pwa_app_id,
-                        browser_hint,
-                        self.cfg.audio_pwa_arguments,
-                        url,
-                    )
-                else:
-                    candidates = self.cfg.audio_urls or [self.cfg.audio_url]
-                    url = ensure_youtube_autoplay(random.choice(candidates))
-                    profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "audio")
-                    os.makedirs(profile, exist_ok=True)
-                    chrome_mode = self.cfg.audio_window_mode
-                    if (chrome_mode or "").lower() == "minimized":
-                        chrome_mode = "normal"
-                    self.proc = launch_chrome([url], profile, chrome_mode, True, True)
-                self.last_launch = time.time()
-                self.pending_launch_at = None
-                self.once_launched = True
-                if self.proc and (self.cfg.audio_window_mode or "").lower() == "minimized":
-                    self.pending_minimize_pid = self.proc.pid
-                    self.pending_restore_pid = self.proc.pid
-                    self.pending_restore_at = time.time() + 0.3
-                    self.pending_restore_again_at = time.time() + 1.2
-                    minimize_delay = max(1.0, float(self.cfg.audio_minimize_delay_sec))
-                    self.pending_minimize_at = time.time() + minimize_delay
+            if self.pending_launch_at is not None:
+                now = time.time()
+                if now >= self.pending_launch_at:
+                    launch_mode = (self.cfg.audio_launch_mode or "chrome").lower()
+                    if launch_mode == "pwa" and self.cfg.audio_pwa_app_id:
+                        browser_hint = self.cfg.audio_pwa_browser_hint or self.pwa_browser_hint
+                        candidates = self.cfg.audio_urls or [self.cfg.audio_url]
+                        url = ensure_youtube_autoplay(random.choice(candidates))
+                        self.proc = launch_pwa(
+                            self.cfg.audio_pwa_app_id,
+                            browser_hint,
+                            self.cfg.audio_pwa_arguments,
+                            url,
+                        )
+                    else:
+                        candidates = self.cfg.audio_urls or [self.cfg.audio_url]
+                        url = ensure_youtube_autoplay(random.choice(candidates))
+                        profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "audio")
+                        os.makedirs(profile, exist_ok=True)
+                        chrome_mode = self.cfg.audio_window_mode
+                        if (chrome_mode or "").lower() == "minimized":
+                            chrome_mode = "normal"
+                        self.proc = launch_chrome([url], profile, chrome_mode, True, True)
+                    self.last_launch = time.time()
+                    self.pending_launch_at = None
+                    self.once_launched = True
+                    if self.proc and (self.cfg.audio_window_mode or "").lower() == "minimized":
+                        self.pending_minimize_pid = self.proc.pid
+                        self.pending_restore_pid = self.proc.pid
+                        self.pending_restore_at = time.time() + 0.3
+                        self.pending_restore_again_at = time.time() + 1.2
+                        minimize_delay = max(1.0, float(self.cfg.audio_minimize_delay_sec))
+                        self.pending_minimize_at = time.time() + minimize_delay
             if self.pending_restore_pid and (self.cfg.audio_window_mode or "").lower() == "minimized":
                 if time.time() >= (self.pending_restore_at or 0):
                     if find_window_handles_by_pid(self.pending_restore_pid):
