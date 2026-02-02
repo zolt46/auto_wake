@@ -215,8 +215,7 @@ class AppConfig:
     audio_start_delay_sec: float = 2.0
     audio_relaunch_cooldown_sec: float = 10.0
     audio_repeat_mode: str = "repeat"
-    audio_start_volume: int = 50
-    audio_minimize_delay_sec: float = 8.0
+    audio_minimize_delay_sec: float = 10.0
     target_enabled: bool = True
     target_window_mode: str = "fullscreen"
     target_start_delay_sec: float = 1.0
@@ -295,8 +294,7 @@ class AppConfig:
                 data.get("audio_relaunch_cooldown_sec", 10.0)
             ),
             audio_repeat_mode=str(data.get("audio_repeat_mode", "repeat")),
-            audio_start_volume=int(data.get("audio_start_volume", 50)),
-            audio_minimize_delay_sec=float(data.get("audio_minimize_delay_sec", 8.0)),
+            audio_minimize_delay_sec=float(data.get("audio_minimize_delay_sec", 10.0)),
             target_enabled=bool(data.get("target_enabled", True)),
             target_window_mode=data.get("target_window_mode", inferred_mode),
             target_start_delay_sec=float(data.get("target_start_delay_sec", 1.0)),
@@ -2612,10 +2610,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audio_relaunch_cooldown.setRange(1.0, 6000.0)
         self.audio_relaunch_cooldown.setSingleStep(1.0)
         self.audio_relaunch_cooldown.setDecimals(2)
-        self.audio_start_volume = StepperInput()
-        self.audio_start_volume.setRange(0, 100)
-        self.audio_start_volume.setSingleStep(5)
-        self.audio_start_volume.setDecimals(0)
         self.audio_minimize_delay = StepperInput()
         self.audio_minimize_delay.setRange(1.0, 30.0)
         self.audio_minimize_delay.setSingleStep(0.5)
@@ -2628,7 +2622,6 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow(self._label("시작 창 모드"), self.audio_mode)
         form.addRow(self._label("시작 지연(초)"), self.audio_start_delay)
         form.addRow(self._label("자동 재생 대기(초)"), self.audio_minimize_delay)
-        form.addRow(self._label("시작 볼륨(%)"), self.audio_start_volume)
         form.addRow(self._label("재실행 쿨다운(초)"), self.audio_relaunch_cooldown)
         form.addRow(self._label("실행 방식"), self.audio_repeat_mode)
         layout.addLayout(form)
@@ -3112,7 +3105,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audio_mode.setCurrentText(cfg.audio_window_mode)
         self.audio_start_delay.setValue(cfg.audio_start_delay_sec)
         self.audio_minimize_delay.setValue(cfg.audio_minimize_delay_sec)
-        self.audio_start_volume.setValue(int(cfg.audio_start_volume))
         self.audio_relaunch_cooldown.setValue(cfg.audio_relaunch_cooldown_sec)
         self.audio_repeat_mode.setCurrentText(cfg.audio_repeat_mode)
 
@@ -3170,7 +3162,6 @@ class MainWindow(QtWidgets.QMainWindow):
             audio_window_mode=self.audio_mode.currentText(),
             audio_start_delay_sec=self.audio_start_delay.value(),
             audio_minimize_delay_sec=self.audio_minimize_delay.value(),
-            audio_start_volume=int(self.audio_start_volume.value()),
             audio_relaunch_cooldown_sec=self.audio_relaunch_cooldown.value(),
             audio_repeat_mode=self.audio_repeat_mode.currentText(),
             target_enabled=self.target_enabled.isChecked(),
@@ -3278,7 +3269,6 @@ class MainWindow(QtWidgets.QMainWindow):
         for widget in [
             self.audio_start_delay,
             self.audio_minimize_delay,
-            self.audio_start_volume,
             self.audio_relaunch_cooldown,
             self.target_start_delay,
             self.target_relaunch_cooldown,
@@ -3408,7 +3398,6 @@ class AudioWorker:
                     launch_mode = self.cfg.audio_window_mode
                     if (launch_mode or "").lower() == "minimized":
                         launch_mode = "normal"
-                    set_system_volume(self.cfg.audio_start_volume)
                     self.proc = launch_chrome([url], profile, launch_mode, True, True)
                     self.last_launch = time.time()
                     self.pending_launch_at = None
@@ -3471,7 +3460,6 @@ class TargetWorker(QtCore.QObject):
         self.pending_minimize_pid: Optional[int] = None
         self.pending_minimize_at: Optional[float] = None
         self.last_launch = 0.0
-        self.last_refocus = 0.0
         self.pending_launch_at: Optional[float] = None
         self.last_config_signature: Optional[tuple] = None
         self.palette_key = (self.cfg.accent_theme, self.cfg.accent_color)
@@ -3652,15 +3640,13 @@ class TargetWorker(QtCore.QObject):
                     self.pending_minimize_pid = self.proc.pid
                     self.pending_minimize_at = time.time() + 0.5
 
-        if self._current_pid():
-            now = time.time()
-            if (
-                self.cfg.target_window_mode != "minimized"
-                and not self.notice.isVisible()
-                and now - self.last_refocus >= self.cfg.target_refocus_interval_sec
-            ):
-                keep_window_on_top(self._current_pid())
-                self.last_refocus = now
+        if self.pending_minimize_pid and (self.cfg.target_window_mode or "").lower() == "minimized":
+            if time.time() >= (self.pending_minimize_at or 0):
+                if find_window_handles_by_pid(self.pending_minimize_pid):
+                    minimize_window(self.pending_minimize_pid)
+                    self.last_minimized_pid = self.pending_minimize_pid
+                    self.pending_minimize_pid = None
+                    self.pending_minimize_at = None
 
         if self.pending_minimize_pid and (self.cfg.target_window_mode or "").lower() == "minimized":
             if time.time() >= (self.pending_minimize_at or 0):
