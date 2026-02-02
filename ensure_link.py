@@ -10,6 +10,7 @@ import os
 import random
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 import time
@@ -284,6 +285,7 @@ class AppConfig:
     audio_pwa_app_id: str = ""
     audio_pwa_command_preview: str = ""
     audio_pwa_browser_hint: str = ""
+    audio_pwa_arguments: str = ""
     target_enabled: bool = True
     target_window_mode: str = "fullscreen"
     target_start_delay_sec: float = 1.0
@@ -370,6 +372,7 @@ class AppConfig:
             audio_pwa_app_id=str(data.get("audio_pwa_app_id", "")),
             audio_pwa_command_preview=str(data.get("audio_pwa_command_preview", "")),
             audio_pwa_browser_hint=str(data.get("audio_pwa_browser_hint", "")),
+            audio_pwa_arguments=str(data.get("audio_pwa_arguments", "")),
             target_enabled=bool(data.get("target_enabled", True)),
             target_window_mode=data.get("target_window_mode", inferred_mode),
             target_start_delay_sec=float(data.get("target_start_delay_sec", 1.0)),
@@ -638,9 +641,9 @@ def _scan_for_youtube_app_id(data: object) -> Optional[str]:
     return None
 
 
-def detect_youtube_pwa_from_shortcuts() -> tuple[str, str]:
+def detect_youtube_pwa_from_shortcuts() -> tuple[str, str, str]:
     if sys.platform != "win32":
-        return "", ""
+        return "", "", ""
     start_menu = os.path.join(
         os.environ.get("APPDATA", ""),
         "Microsoft",
@@ -650,7 +653,7 @@ def detect_youtube_pwa_from_shortcuts() -> tuple[str, str]:
         "Chrome 앱",
     )
     if not os.path.exists(start_menu):
-        return "", ""
+        return "", "", ""
     for root, _dirs, files in os.walk(start_menu):
         for name in files:
             if not name.lower().endswith(".lnk"):
@@ -676,14 +679,14 @@ def detect_youtube_pwa_from_shortcuts() -> tuple[str, str]:
                 app_id = match.group(1)
                 launcher = target_path.strip()
                 if launcher:
-                    return app_id, launcher
-    return "", ""
+                    return app_id, launcher, arguments.strip()
+    return "", "", ""
 
 
-def detect_youtube_pwa_app_id() -> tuple[str, str]:
-    shortcut_app_id, shortcut_launcher = detect_youtube_pwa_from_shortcuts()
+def detect_youtube_pwa_app_id() -> tuple[str, str, str]:
+    shortcut_app_id, shortcut_launcher, shortcut_args = detect_youtube_pwa_from_shortcuts()
     if shortcut_app_id:
-        return shortcut_app_id, shortcut_launcher
+        return shortcut_app_id, shortcut_launcher, shortcut_args
     candidates = [
         (
             os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "Chrome", "User Data"),
@@ -703,24 +706,30 @@ def detect_youtube_pwa_app_id() -> tuple[str, str]:
                 continue
             app_id = _scan_for_youtube_app_id(data)
             if app_id:
-                return app_id, browser_hint
-    return "", ""
+                return app_id, browser_hint, ""
+    return "", "", ""
 
 
-def build_pwa_command_preview(app_id: str, browser_hint: str) -> str:
+def build_pwa_command_preview(app_id: str, browser_hint: str, launcher_args: str, url: str) -> str:
     if not app_id:
         return ""
     if os.path.isfile(browser_hint):
-        return f"{browser_hint} --app-id={app_id} --autoplay-policy=no-user-gesture-required"
+        base = f"{browser_hint} {launcher_args}".strip()
+        return f"{base} {url}".strip()
     browser = find_chrome_exe()
     if browser_hint == "msedge":
         edge = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "Application", "msedge.exe")
         if edge and os.path.exists(edge):
             browser = edge
-    return f"{browser} --app-id={app_id} --autoplay-policy=no-user-gesture-required"
+    return f"{browser} --app-id={app_id} --autoplay-policy=no-user-gesture-required {url}".strip()
 
 
-def launch_pwa(app_id: str, browser_hint: str) -> Optional[subprocess.Popen]:
+def launch_pwa(
+    app_id: str,
+    browser_hint: str,
+    launcher_args: str,
+    url: str,
+) -> Optional[subprocess.Popen]:
     if not app_id:
         return None
     if os.path.isfile(browser_hint):
@@ -733,13 +742,20 @@ def launch_pwa(app_id: str, browser_hint: str) -> Optional[subprocess.Popen]:
             )
             if edge and os.path.exists(edge):
                 browser = edge
-    args = [
-        browser,
-        f"--app-id={app_id}",
-        "--autoplay-policy=no-user-gesture-required",
-        "--disable-background-mode",
-        "--disable-backgrounding-occluded-windows",
-    ]
+    args = [browser]
+    if launcher_args:
+        args.extend(shlex.split(launcher_args))
+    else:
+        args.extend(
+            [
+                f"--app-id={app_id}",
+                "--autoplay-policy=no-user-gesture-required",
+                "--disable-background-mode",
+                "--disable-backgrounding-occluded-windows",
+            ]
+        )
+    if url:
+        args.append(url)
     try:
         log(f"Launching PWA: {args}")
         return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -3443,6 +3459,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if cfg.audio_launch_mode == "pwa" and cfg.audio_pwa_app_id:
             self.audio_pwa_app_id_value = cfg.audio_pwa_app_id
             self.audio_pwa_browser_hint = cfg.audio_pwa_browser_hint
+            self.audio_pwa_arguments = cfg.audio_pwa_arguments
             self.audio_pwa_command.setText(cfg.audio_pwa_command_preview)
             self.audio_pwa_status.setText(f"PWA 설정됨: {cfg.audio_pwa_app_id}")
             self.audio_launch_pwa.setEnabled(True)
@@ -3511,6 +3528,7 @@ class MainWindow(QtWidgets.QMainWindow):
             audio_pwa_app_id=self.audio_pwa_app_id_value,
             audio_pwa_command_preview=self.audio_pwa_command.text().strip(),
             audio_pwa_browser_hint=getattr(self, "audio_pwa_browser_hint", ""),
+            audio_pwa_arguments=getattr(self, "audio_pwa_arguments", ""),
             target_enabled=self.target_enabled.isChecked(),
             target_window_mode=target_mode,
             target_start_delay_sec=self.target_start_delay.value(),
@@ -3643,11 +3661,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_workers()
 
     def _refresh_pwa_info(self) -> None:
-        app_id, browser_hint = detect_youtube_pwa_app_id()
+        app_id, browser_hint, launcher_args = detect_youtube_pwa_app_id()
         self.audio_pwa_app_id_value = app_id
         self.audio_pwa_browser_hint = browser_hint
+        self.audio_pwa_arguments = launcher_args
         if app_id:
-            command_preview = build_pwa_command_preview(app_id, browser_hint)
+            audio_urls = list(self.audio_urls or [self.cfg.audio_url])
+            preview_url = ensure_youtube_autoplay(audio_urls[0]) if audio_urls else ""
+            command_preview = build_pwa_command_preview(
+                app_id,
+                browser_hint,
+                launcher_args,
+                preview_url,
+            )
             self.audio_pwa_command.setText(command_preview)
             self.audio_pwa_status.setText(f"PWA 탐색됨: {app_id}")
             self.audio_launch_pwa.setEnabled(True)
@@ -3776,7 +3802,14 @@ class AudioWorker:
                     launch_mode = (self.cfg.audio_launch_mode or "chrome").lower()
                     if launch_mode == "pwa" and self.cfg.audio_pwa_app_id:
                         browser_hint = self.cfg.audio_pwa_browser_hint or self.pwa_browser_hint
-                        self.proc = launch_pwa(self.cfg.audio_pwa_app_id, browser_hint)
+                        candidates = self.cfg.audio_urls or [self.cfg.audio_url]
+                        url = ensure_youtube_autoplay(random.choice(candidates))
+                        self.proc = launch_pwa(
+                            self.cfg.audio_pwa_app_id,
+                            browser_hint,
+                            self.cfg.audio_pwa_arguments,
+                            url,
+                        )
                     else:
                         candidates = self.cfg.audio_urls or [self.cfg.audio_url]
                         url = ensure_youtube_autoplay(random.choice(candidates))
