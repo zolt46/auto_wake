@@ -676,10 +676,12 @@ def detect_youtube_pwa_from_shortcuts() -> tuple[str, str, str, bool]:
             if "|" not in output:
                 continue
             target_path, arguments = output.split("|", 1)
+            target_path = target_path.strip().strip('"')
+            arguments = arguments.strip()
             match = re.search(r"--app-id=([a-zA-Z0-9]+)", arguments)
             if match:
                 app_id = match.group(1)
-                launcher = target_path.strip()
+                launcher = target_path.strip().strip('"')
                 if launcher:
                     return app_id, launcher, arguments.strip(), "chrome_proxy" in launcher.lower()
     return "", "", "", False
@@ -712,6 +714,27 @@ def detect_youtube_pwa_app_id() -> tuple[str, str, str, bool]:
     return "", "", "", False
 
 
+def _clean_launch_url_arg(launcher_args: str) -> str:
+    if not launcher_args:
+        return ""
+    cleaned = re.sub(
+        r"--app-launch-url-for-shortcuts-menu-item=\\\".*?\\\"",
+        "",
+        launcher_args,
+    )
+    cleaned = re.sub(
+        r"--app-launch-url-for-shortcuts-menu-item=\".*?\"",
+        "",
+        cleaned,
+    )
+    cleaned = re.sub(
+        r"--app-launch-url-for-shortcuts-menu-item=\\S+",
+        "",
+        cleaned,
+    )
+    return " ".join(cleaned.split())
+
+
 def build_pwa_command_preview(
     app_id: str,
     browser_hint: str,
@@ -724,8 +747,9 @@ def build_pwa_command_preview(
     launch_url_arg = ""
     if url:
         launch_url_arg = f'--app-launch-url-for-shortcuts-menu-item="{url}"'
+    cleaned_args = _clean_launch_url_arg(launcher_args)
     if os.path.isfile(browser_hint):
-        base = f"{browser_hint} {launcher_args}".strip()
+        base = f"{browser_hint} {cleaned_args}".strip()
         preview_items = [base, launch_url_arg]
         if random_mode:
             preview_items.append("# 랜덤 URL은 실행 시 선택됩니다.")
@@ -750,8 +774,9 @@ def launch_pwa(
 ) -> Optional[subprocess.Popen]:
     if not app_id:
         return None
-    if os.path.isfile(browser_hint):
-        browser = browser_hint
+    browser_candidate = browser_hint.strip().strip('"')
+    if os.path.isfile(browser_candidate):
+        browser = browser_candidate
     else:
         browser = find_chrome_exe()
         if browser_hint == "msedge":
@@ -761,8 +786,9 @@ def launch_pwa(
             if edge and os.path.exists(edge):
                 browser = edge
     args = [browser]
-    if launcher_args:
-        args.extend(shlex.split(launcher_args))
+    cleaned_args = _clean_launch_url_arg(launcher_args)
+    if cleaned_args:
+        args.extend(shlex.split(cleaned_args))
     else:
         args.extend(
             [
@@ -773,7 +799,7 @@ def launch_pwa(
             ]
         )
     if url:
-        args.append(f'--app-launch-url-for-shortcuts-menu-item={url}')
+        args.append(f'--app-launch-url-for-shortcuts-menu-item="{url}"')
     try:
         log(f"Launching PWA: {args}")
         return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
