@@ -713,15 +713,19 @@ def detect_youtube_pwa_app_id() -> tuple[str, str, str]:
 def build_pwa_command_preview(app_id: str, browser_hint: str, launcher_args: str, url: str) -> str:
     if not app_id:
         return ""
+    launch_url_arg = ""
+    if url:
+        launch_url_arg = f'--app-launch-url-for-shortcuts-menu-item="{url}"'
     if os.path.isfile(browser_hint):
         base = f"{browser_hint} {launcher_args}".strip()
-        return f"{base} {url}".strip()
+        return " ".join(item for item in [base, launch_url_arg] if item)
     browser = find_chrome_exe()
     if browser_hint == "msedge":
         edge = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "Application", "msedge.exe")
         if edge and os.path.exists(edge):
             browser = edge
-    return f"{browser} --app-id={app_id} --autoplay-policy=no-user-gesture-required {url}".strip()
+    base = f"{browser} --app-id={app_id} --autoplay-policy=no-user-gesture-required".strip()
+    return " ".join(item for item in [base, launch_url_arg] if item)
 
 
 def launch_pwa(
@@ -755,7 +759,7 @@ def launch_pwa(
             ]
         )
     if url:
-        args.append(url)
+        args.append(f'--app-launch-url-for-shortcuts-menu-item={url}')
     try:
         log(f"Launching PWA: {args}")
         return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
