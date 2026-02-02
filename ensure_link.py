@@ -788,7 +788,7 @@ def launch_pwa(
     args = [browser]
     cleaned_args = _clean_launch_url_arg(launcher_args)
     if cleaned_args:
-        args.extend(shlex.split(cleaned_args))
+        args.extend(shlex.split(cleaned_args, posix=False))
     else:
         args.extend(
             [
@@ -799,7 +799,7 @@ def launch_pwa(
             ]
         )
     if url:
-        args.append(f'--app-launch-url-for-shortcuts-menu-item="{url}"')
+        args.append(f"--app-launch-url-for-shortcuts-menu-item={url}")
     try:
         log(f"Launching PWA: {args}")
         return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
