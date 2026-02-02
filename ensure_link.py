@@ -3914,11 +3914,7 @@ class AudioWorker:
             if self.proc is None or self.proc.poll() is not None:
                 launch_mode = (self.cfg.audio_launch_mode or "chrome").lower()
                 if launch_mode == "pwa" and self.cfg.audio_pwa_app_id:
-                    existing = [
-                        pid
-                        for pid in find_chrome_processes_by_app_id(self.cfg.audio_pwa_app_id)
-                        if find_window_handles_by_pid(pid)
-                    ]
+                    existing = find_chrome_processes_by_app_id(self.cfg.audio_pwa_app_id)
                     if existing:
                         self.external_pid = existing[0]
                         self.last_launch = time.time()
