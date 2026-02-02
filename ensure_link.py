@@ -3,6 +3,7 @@ import html
 import ctypes
 from ctypes import wintypes
 from dataclasses import dataclass, asdict, replace
+import atexit
 import hashlib
 import json
 import os
@@ -80,6 +81,60 @@ def config_file_path(work_dir: str) -> str:
 
 def notice_state_path(work_dir: str) -> str:
     return os.path.join(work_dir, NOTICE_STATE_FILE)
+
+
+def worker_lock_path(work_dir: str, name: str) -> str:
+    return os.path.join(work_dir, f"{name}.lock")
+
+
+def _pid_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return False
+        exit_code = wintypes.DWORD()
+        ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return exit_code.value == 259
+    try:
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
+
+def acquire_worker_lock(work_dir: str, name: str) -> Optional[str]:
+    os.makedirs(work_dir, exist_ok=True)
+    path = worker_lock_path(work_dir, name)
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as file:
+                data = json.load(file)
+            pid = int(data.get("pid", 0))
+            if _pid_is_running(pid):
+                return None
+            os.remove(path)
+    except Exception as exc:
+        log(f"WORKER lock read error: {exc}")
+    try:
+        with open(path, "w", encoding="utf-8") as file:
+            json.dump({"pid": os.getpid(), "started_at": time.time()}, file)
+    except Exception as exc:
+        log(f"WORKER lock write error: {exc}")
+        return None
+    return path
+
+
+def release_worker_lock(path: Optional[str]) -> None:
+    if not path:
+        return
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception as exc:
+        log(f"WORKER lock remove error: {exc}")
 
 
 def read_notice_state(work_dir: str) -> dict:
@@ -2884,6 +2939,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.cfg.work_dir = new_dir
             save_config(self.cfg)
             self.config_path.setText(new_dir)
+            if self.is_running:
+                self.process_manager.stop_all()
+                self._sync_workers()
         except Exception as exc:
             log(f"CHANGE work dir error: {exc}")
 
@@ -3359,6 +3417,13 @@ class AudioWorker:
                 profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "audio")
                 os.makedirs(profile, exist_ok=True)
                 existing = find_chrome_processes_by_profile(profile)
+                if len(existing) > 1:
+                    visible = [pid for pid in existing if find_window_handles_by_pid(pid)]
+                    keep_pid = visible[0] if visible else existing[0]
+                    for pid in existing:
+                        if pid != keep_pid:
+                            terminate_process(pid)
+                    existing = [keep_pid]
                 if existing:
                     self.external_pid = existing[0]
                     self.last_launch = time.time()
@@ -3705,7 +3770,16 @@ class SaverWorker(QtCore.QObject):
 
 def run_audio_worker():
     ensure_streams()
-    AudioWorker().run()
+    cfg = load_config()
+    lock_path = acquire_worker_lock(cfg.work_dir, "audio_worker")
+    if not lock_path:
+        log("AUDIO worker already running; exit.")
+        return
+    atexit.register(release_worker_lock, lock_path)
+    try:
+        AudioWorker().run()
+    finally:
+        release_worker_lock(lock_path)
 
 
 def run_target_worker():
