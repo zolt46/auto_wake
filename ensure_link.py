@@ -646,44 +646,72 @@ def _scan_for_youtube_app_id(data: object) -> Optional[str]:
 def detect_youtube_pwa_from_shortcuts() -> tuple[str, str, str, bool]:
     if sys.platform != "win32":
         return "", "", "", False
-    start_menu = os.path.join(
-        os.environ.get("APPDATA", ""),
-        "Microsoft",
-        "Windows",
-        "Start Menu",
-        "Programs",
+    start_menu_roots = [
+        os.path.join(
+            os.environ.get("APPDATA", ""),
+            "Microsoft",
+            "Windows",
+            "Start Menu",
+            "Programs",
+        ),
+        os.path.join(
+            os.environ.get("PROGRAMDATA", ""),
+            "Microsoft",
+            "Windows",
+            "Start Menu",
+            "Programs",
+        ),
+    ]
+    app_folders = [
+        "Chrome Apps",
         "Chrome 앱",
-    )
-    if not os.path.exists(start_menu):
-        return "", "", "", False
-    for root, _dirs, files in os.walk(start_menu):
-        for name in files:
-            if not name.lower().endswith(".lnk"):
-                continue
-            link_path = os.path.join(root, name)
-            try:
-                safe_link_path = link_path.replace("'", "''")
-                command = (
-                    "$s=(New-Object -ComObject WScript.Shell).CreateShortcut("
-                    f"'{safe_link_path}'"
-                    ");"
-                    "$s.TargetPath + '|' + $s.Arguments"
-                )
-                cmd = ["powershell", "-NoProfile", "-Command", command]
-                output = subprocess.check_output(cmd, text=True).strip()
-            except Exception:
-                continue
-            if "|" not in output:
-                continue
-            target_path, arguments = output.split("|", 1)
-            target_path = target_path.strip().strip('"')
-            arguments = arguments.strip()
-            match = re.search(r"--app-id=([a-zA-Z0-9]+)", arguments)
-            if match:
-                app_id = match.group(1)
-                launcher = target_path.strip().strip('"')
-                if launcher:
-                    return app_id, launcher, arguments.strip(), "chrome_proxy" in launcher.lower()
+        "Microsoft Edge Apps",
+        "Microsoft Edge 앱",
+    ]
+    candidate_dirs = []
+    for root in start_menu_roots:
+        if not root or not os.path.exists(root):
+            continue
+        for folder in app_folders:
+            candidate = os.path.join(root, folder)
+            if os.path.exists(candidate):
+                candidate_dirs.append(candidate)
+    fallback_roots = [root for root in start_menu_roots if root and os.path.exists(root)]
+    search_dirs = candidate_dirs or fallback_roots
+    for root in search_dirs:
+        limit_to_youtube = root in fallback_roots and not candidate_dirs
+        if not os.path.exists(root):
+            continue
+        for current_root, _dirs, files in os.walk(root):
+            for name in files:
+                if not name.lower().endswith(".lnk"):
+                    continue
+                if limit_to_youtube and "youtube" not in name.lower():
+                    continue
+                link_path = os.path.join(current_root, name)
+                try:
+                    safe_link_path = link_path.replace("'", "''")
+                    command = (
+                        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut("
+                        f"'{safe_link_path}'"
+                        ");"
+                        "$s.TargetPath + '|' + $s.Arguments"
+                    )
+                    cmd = ["powershell", "-NoProfile", "-Command", command]
+                    output = subprocess.check_output(cmd, text=True).strip()
+                except Exception:
+                    continue
+                if "|" not in output:
+                    continue
+                target_path, arguments = output.split("|", 1)
+                target_path = target_path.strip().strip('"')
+                arguments = arguments.strip()
+                match = re.search(r"--app-id=([a-zA-Z0-9]+)", arguments)
+                if match:
+                    app_id = match.group(1)
+                    launcher = target_path.strip().strip('"')
+                    if launcher:
+                        return app_id, launcher, arguments.strip(), "chrome_proxy" in launcher.lower()
     return "", "", "", False
 
 
