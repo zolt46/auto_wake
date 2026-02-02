@@ -982,6 +982,35 @@ def find_chrome_processes_by_profile(profile_dir: str) -> list[int]:
     return pids
 
 
+def find_chrome_processes_by_app_id(app_id: str) -> list[int]:
+    if os.name != "nt" or not app_id:
+        return []
+    try:
+        query = f"CommandLine like '%--app-id={app_id}%'"
+        creationflags = (
+            subprocess.CREATE_NO_WINDOW if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+        )
+        output = subprocess.check_output(
+            ["wmic", "process", "where", query, "get", "ProcessId,CommandLine", "/format:csv"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+        )
+    except Exception:
+        return []
+    pids: list[int] = []
+    for line in output.splitlines():
+        if "--app-id" not in line:
+            continue
+        parts = [part for part in line.split(",") if part]
+        if not parts:
+            continue
+        pid_str = parts[-1].strip()
+        if pid_str.isdigit():
+            pids.append(int(pid_str))
+    return pids
+
+
 def _normalize_notice_text(value: str, fallback: str) -> str:
     if value is None:
         return fallback
@@ -1195,6 +1224,15 @@ class ModeSelector(QtWidgets.QWidget):
         if button:
             button.setChecked(True)
             self._emit_current_text()
+
+    def setOptionEnabled(self, option: str, enabled: bool) -> None:
+        button = self._buttons.get(option)
+        if button:
+            button.setEnabled(enabled)
+
+    def setEnabledOptions(self, enabled_options: set[str]) -> None:
+        for option, button in self._buttons.items():
+            button.setEnabled(option in enabled_options)
 
 class FancyCard(QtWidgets.QFrame):
     def __init__(self, title: str, subtitle: str, parent=None):
@@ -3014,6 +3052,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audio_launch_pwa = QtWidgets.QRadioButton("YouTube 앱(PWA)으로 실행")
         self.audio_launch_group.addButton(self.audio_launch_chrome)
         self.audio_launch_group.addButton(self.audio_launch_pwa)
+        self.audio_launch_chrome.toggled.connect(self._update_audio_mode_availability)
+        self.audio_launch_pwa.toggled.connect(self._update_audio_mode_availability)
         self.audio_pwa_status = QtWidgets.QLabel("")
         self.audio_pwa_status.setWordWrap(True)
         self.audio_pwa_command = QtWidgets.QLineEdit()
@@ -3058,6 +3098,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _update_audio_url_display(self):
         self.audio_url.setText(self._format_url_summary(self.audio_urls, DEFAULT_AUDIO_URL))
+
+    def _update_audio_mode_availability(self):
+        use_pwa = self.audio_launch_pwa.isChecked()
+        if use_pwa:
+            enabled = {"minimized", "normal"}
+        else:
+            enabled = set(self.audio_mode._buttons.keys())
+        self.audio_mode.setEnabledOptions(enabled)
+        if self.audio_mode.currentText() not in enabled:
+            self.audio_mode.setCurrentText("normal" if "normal" in enabled else next(iter(enabled), ""))
 
     def _update_target_url_display(self):
         self.target_url.setText(self._format_url_summary(self.target_urls, DEFAULT_URL))
@@ -3540,6 +3590,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.audio_launch_chrome.setChecked(True)
             self._refresh_pwa_info()
+        self._update_audio_mode_availability()
 
         self.target_enabled.setChecked(cfg.target_enabled)
         self.target_urls = list(cfg.urls or [cfg.url])
@@ -3772,6 +3823,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.audio_pwa_status.setText("PWA 탐색 실패: 크롬 실행으로 대체됩니다.")
             self.audio_launch_pwa.setEnabled(False)
             self.audio_launch_chrome.setChecked(True)
+        self._update_audio_mode_availability()
 
     def _start_workers(self):
         self._save_config()
@@ -3860,23 +3912,38 @@ class AudioWorker:
                 time.sleep(self.cfg.poll_sec)
                 continue
             if self.proc is None or self.proc.poll() is not None:
-                profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "audio")
-                os.makedirs(profile, exist_ok=True)
-                existing = find_chrome_processes_by_profile(profile)
-                if len(existing) > 1:
-                    visible = [pid for pid in existing if find_window_handles_by_pid(pid)]
-                    keep_pid = visible[0] if visible else existing[0]
-                    for pid in existing:
-                        if pid != keep_pid:
-                            terminate_process(pid)
-                    existing = [keep_pid]
-                if existing:
-                    self.external_pid = existing[0]
-                    self.last_launch = time.time()
-                    self.pending_launch_at = None
-                    self.once_launched = True
-                    time.sleep(self.cfg.poll_sec)
-                    continue
+                launch_mode = (self.cfg.audio_launch_mode or "chrome").lower()
+                if launch_mode == "pwa" and self.cfg.audio_pwa_app_id:
+                    existing = [
+                        pid
+                        for pid in find_chrome_processes_by_app_id(self.cfg.audio_pwa_app_id)
+                        if find_window_handles_by_pid(pid)
+                    ]
+                    if existing:
+                        self.external_pid = existing[0]
+                        self.last_launch = time.time()
+                        self.pending_launch_at = None
+                        self.once_launched = True
+                        time.sleep(self.cfg.poll_sec)
+                        continue
+                else:
+                    profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "audio")
+                    os.makedirs(profile, exist_ok=True)
+                    existing = find_chrome_processes_by_profile(profile)
+                    if len(existing) > 1:
+                        visible = [pid for pid in existing if find_window_handles_by_pid(pid)]
+                        keep_pid = visible[0] if visible else existing[0]
+                        for pid in existing:
+                            if pid != keep_pid:
+                                terminate_process(pid)
+                        existing = [keep_pid]
+                    if existing:
+                        self.external_pid = existing[0]
+                        self.last_launch = time.time()
+                        self.pending_launch_at = None
+                        self.once_launched = True
+                        time.sleep(self.cfg.poll_sec)
+                        continue
                 if self.cfg.audio_repeat_mode == "once" and self.once_launched:
                     time.sleep(self.cfg.poll_sec)
                     continue
@@ -3884,39 +3951,39 @@ class AudioWorker:
                 if now - self.last_launch >= self.cfg.audio_relaunch_cooldown_sec:
                     if self.pending_launch_at is None:
                         self.pending_launch_at = now + self.cfg.audio_start_delay_sec
-            if self.pending_launch_at is not None:
-                now = time.time()
-                if now >= self.pending_launch_at:
-                    launch_mode = (self.cfg.audio_launch_mode or "chrome").lower()
-                    if launch_mode == "pwa" and self.cfg.audio_pwa_app_id:
-                        browser_hint = self.cfg.audio_pwa_browser_hint or self.pwa_browser_hint
-                        candidates = self.cfg.audio_urls or [self.cfg.audio_url]
-                        url = ensure_youtube_autoplay(random.choice(candidates))
-                        self.proc = launch_pwa(
-                            self.cfg.audio_pwa_app_id,
-                            browser_hint,
-                            self.cfg.audio_pwa_arguments,
-                            url,
-                        )
-                    else:
-                        candidates = self.cfg.audio_urls or [self.cfg.audio_url]
-                        url = ensure_youtube_autoplay(random.choice(candidates))
-                        profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "audio")
-                        os.makedirs(profile, exist_ok=True)
-                        chrome_mode = self.cfg.audio_window_mode
-                        if (chrome_mode or "").lower() == "minimized":
-                            chrome_mode = "normal"
-                        self.proc = launch_chrome([url], profile, chrome_mode, True, True)
-                    self.last_launch = time.time()
-                    self.pending_launch_at = None
-                    self.once_launched = True
-                    if self.proc and (self.cfg.audio_window_mode or "").lower() == "minimized":
-                        self.pending_minimize_pid = self.proc.pid
-                        self.pending_restore_pid = self.proc.pid
-                        self.pending_restore_at = time.time() + 0.3
-                        self.pending_restore_again_at = time.time() + 1.2
-                        minimize_delay = max(1.0, float(self.cfg.audio_minimize_delay_sec))
-                        self.pending_minimize_at = time.time() + minimize_delay
+        if self.pending_launch_at is not None:
+            now = time.time()
+            if now >= self.pending_launch_at:
+                launch_mode = (self.cfg.audio_launch_mode or "chrome").lower()
+                if launch_mode == "pwa" and self.cfg.audio_pwa_app_id:
+                    browser_hint = self.cfg.audio_pwa_browser_hint or self.pwa_browser_hint
+                    candidates = self.cfg.audio_urls or [self.cfg.audio_url]
+                    url = ensure_youtube_autoplay(random.choice(candidates))
+                    self.proc = launch_pwa(
+                        self.cfg.audio_pwa_app_id,
+                        browser_hint,
+                        self.cfg.audio_pwa_arguments,
+                        url,
+                    )
+                else:
+                    candidates = self.cfg.audio_urls or [self.cfg.audio_url]
+                    url = ensure_youtube_autoplay(random.choice(candidates))
+                    profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "audio")
+                    os.makedirs(profile, exist_ok=True)
+                    chrome_mode = self.cfg.audio_window_mode
+                    if (chrome_mode or "").lower() == "minimized":
+                        chrome_mode = "normal"
+                    self.proc = launch_chrome([url], profile, chrome_mode, True, True)
+                self.last_launch = time.time()
+                self.pending_launch_at = None
+                self.once_launched = True
+                if self.proc and (self.cfg.audio_window_mode or "").lower() == "minimized":
+                    self.pending_minimize_pid = self.proc.pid
+                    self.pending_restore_pid = self.proc.pid
+                    self.pending_restore_at = time.time() + 0.3
+                    self.pending_restore_again_at = time.time() + 1.2
+                    minimize_delay = max(1.0, float(self.cfg.audio_minimize_delay_sec))
+                    self.pending_minimize_at = time.time() + minimize_delay
             if self.pending_restore_pid and (self.cfg.audio_window_mode or "").lower() == "minimized":
                 if time.time() >= (self.pending_restore_at or 0):
                     if find_window_handles_by_pid(self.pending_restore_pid):
