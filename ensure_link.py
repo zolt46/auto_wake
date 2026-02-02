@@ -3951,7 +3951,9 @@ class AudioWorker:
                 now = time.time()
                 if now >= self.pending_launch_at:
                     launch_mode = (self.cfg.audio_launch_mode or "chrome").lower()
+                    pwa_attempted = False
                     if launch_mode == "pwa" and self.cfg.audio_pwa_app_id:
+                        pwa_attempted = True
                         browser_hint = self.cfg.audio_pwa_browser_hint or self.pwa_browser_hint
                         candidates = self.cfg.audio_urls or [self.cfg.audio_url]
                         url = ensure_youtube_autoplay(random.choice(candidates))
@@ -3961,7 +3963,13 @@ class AudioWorker:
                             self.cfg.audio_pwa_arguments,
                             url,
                         )
+                        if self.proc is None:
+                            log("PWA launch failed; falling back to Chrome.")
+                    if launch_mode != "chrome" and self.proc is not None:
+                        pass
                     else:
+                        if launch_mode != "chrome" and not pwa_attempted:
+                            log("PWA app-id missing; falling back to Chrome.")
                         candidates = self.cfg.audio_urls or [self.cfg.audio_url]
                         url = ensure_youtube_autoplay(random.choice(candidates))
                         profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "audio")
