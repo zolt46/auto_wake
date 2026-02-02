@@ -271,6 +271,10 @@ class AppConfig:
     audio_relaunch_cooldown_sec: float = 10.0
     audio_repeat_mode: str = "repeat"
     audio_minimize_delay_sec: float = 10.0
+    audio_launch_mode: str = "chrome"
+    audio_pwa_app_id: str = ""
+    audio_pwa_command_preview: str = ""
+    audio_pwa_browser_hint: str = ""
     target_enabled: bool = True
     target_window_mode: str = "fullscreen"
     target_start_delay_sec: float = 1.0
@@ -350,6 +354,10 @@ class AppConfig:
             ),
             audio_repeat_mode=str(data.get("audio_repeat_mode", "repeat")),
             audio_minimize_delay_sec=float(data.get("audio_minimize_delay_sec", 10.0)),
+            audio_launch_mode=str(data.get("audio_launch_mode", "chrome")),
+            audio_pwa_app_id=str(data.get("audio_pwa_app_id", "")),
+            audio_pwa_command_preview=str(data.get("audio_pwa_command_preview", "")),
+            audio_pwa_browser_hint=str(data.get("audio_pwa_browser_hint", "")),
             target_enabled=bool(data.get("target_enabled", True)),
             target_window_mode=data.get("target_window_mode", inferred_mode),
             target_start_delay_sec=float(data.get("target_start_delay_sec", 1.0)),
@@ -574,6 +582,103 @@ def find_chrome_exe() -> str:
             return resolved
     log("Chrome/Edge executable not found; falling back to 'chrome' in PATH.")
     return "chrome"
+
+
+def _iter_manifest_candidates(user_data_dir: str) -> list[str]:
+    manifests: list[str] = []
+    if not user_data_dir or not os.path.exists(user_data_dir):
+        return manifests
+    for root, _dirs, files in os.walk(user_data_dir):
+        if "Web Applications" not in root:
+            continue
+        if "manifest.json" in files:
+            manifests.append(os.path.join(root, "manifest.json"))
+    return manifests
+
+
+def _extract_app_id(entry: dict) -> Optional[str]:
+    app_id = entry.get("app_id") or entry.get("id")
+    if isinstance(app_id, str) and app_id:
+        return app_id
+    return None
+
+
+def _scan_for_youtube_app_id(data: object) -> Optional[str]:
+    if isinstance(data, dict):
+        name = str(data.get("name", "")).lower()
+        short_name = str(data.get("short_name", "")).lower()
+        if "youtube" in name or "youtube" in short_name:
+            app_id = _extract_app_id(data)
+            if app_id:
+                return app_id
+        for value in data.values():
+            found = _scan_for_youtube_app_id(value)
+            if found:
+                return found
+    elif isinstance(data, list):
+        for item in data:
+            found = _scan_for_youtube_app_id(item)
+            if found:
+                return found
+    return None
+
+
+def detect_youtube_pwa_app_id() -> tuple[str, str]:
+    candidates = [
+        (
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "Chrome", "User Data"),
+            "chrome",
+        ),
+        (
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "User Data"),
+            "msedge",
+        ),
+    ]
+    for user_data_dir, browser_hint in candidates:
+        for manifest_path in _iter_manifest_candidates(user_data_dir):
+            try:
+                with open(manifest_path, "r", encoding="utf-8") as file:
+                    data = json.load(file)
+            except Exception:
+                continue
+            app_id = _scan_for_youtube_app_id(data)
+            if app_id:
+                return app_id, browser_hint
+    return "", ""
+
+
+def build_pwa_command_preview(app_id: str, browser_hint: str) -> str:
+    if not app_id:
+        return ""
+    browser = find_chrome_exe()
+    if browser_hint == "msedge":
+        edge = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "Application", "msedge.exe")
+        if edge and os.path.exists(edge):
+            browser = edge
+    return f"{browser} --app-id={app_id} --autoplay-policy=no-user-gesture-required"
+
+
+def launch_pwa(app_id: str, browser_hint: str) -> Optional[subprocess.Popen]:
+    if not app_id:
+        return None
+    browser = find_chrome_exe()
+    if browser_hint == "msedge":
+        edge = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "Application", "msedge.exe")
+        if edge and os.path.exists(edge):
+            browser = edge
+    args = [
+        browser,
+        f"--app-id={app_id}",
+        "--autoplay-policy=no-user-gesture-required",
+        "--disable-background-mode",
+        "--disable-backgrounding-occluded-windows",
+    ]
+    try:
+        log(f"Launching PWA: {args}")
+        return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as exc:
+        log(f"ERROR launching PWA: {exc}")
+        return None
 
 
 def build_chrome_args(
@@ -2669,16 +2774,37 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audio_minimize_delay.setRange(1.0, 30.0)
         self.audio_minimize_delay.setSingleStep(0.5)
         self.audio_minimize_delay.setDecimals(2)
+        self.audio_launch_group = QtWidgets.QButtonGroup(self)
+        self.audio_launch_chrome = QtWidgets.QRadioButton("크롬으로 실행")
+        self.audio_launch_pwa = QtWidgets.QRadioButton("YouTube 앱(PWA)으로 실행")
+        self.audio_launch_group.addButton(self.audio_launch_chrome)
+        self.audio_launch_group.addButton(self.audio_launch_pwa)
+        self.audio_pwa_status = QtWidgets.QLabel("")
+        self.audio_pwa_status.setWordWrap(True)
+        self.audio_pwa_command = QtWidgets.QLineEdit()
+        self.audio_pwa_command.setReadOnly(True)
+        self.audio_pwa_refresh = QtWidgets.QPushButton("PWA 탐색")
+        self.audio_pwa_refresh.clicked.connect(self._refresh_pwa_info)
+        launch_row = QtWidgets.QHBoxLayout()
+        launch_row.addWidget(self.audio_launch_chrome)
+        launch_row.addWidget(self.audio_launch_pwa)
+        launch_row.addStretch()
+        refresh_row = QtWidgets.QHBoxLayout()
+        refresh_row.addWidget(self.audio_pwa_status, 1)
+        refresh_row.addWidget(self.audio_pwa_refresh)
         self.audio_repeat_mode = ModeSelector(
             ["repeat", "once"],
             labels={"repeat": "반복 실행", "once": "초기 1회 실행"},
         )
         form.addRow(self._label("음원 URL"), audio_url_row)
+        form.addRow(self._label("실행 방식"), launch_row)
+        form.addRow("", refresh_row)
+        form.addRow("PWA 실행 명령", self.audio_pwa_command)
         form.addRow(self._label("시작 창 모드"), self.audio_mode)
         form.addRow(self._label("시작 지연(초)"), self.audio_start_delay)
         form.addRow(self._label("자동 재생 대기(초)"), self.audio_minimize_delay)
         form.addRow(self._label("재실행 쿨다운(초)"), self.audio_relaunch_cooldown)
-        form.addRow(self._label("실행 방식"), self.audio_repeat_mode)
+        form.addRow(self._label("실행 정책"), self.audio_repeat_mode)
         layout.addLayout(form)
 
     @staticmethod
@@ -3165,6 +3291,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audio_minimize_delay.setValue(cfg.audio_minimize_delay_sec)
         self.audio_relaunch_cooldown.setValue(cfg.audio_relaunch_cooldown_sec)
         self.audio_repeat_mode.setCurrentText(cfg.audio_repeat_mode)
+        if cfg.audio_launch_mode == "pwa" and cfg.audio_pwa_app_id:
+            self.audio_pwa_app_id_value = cfg.audio_pwa_app_id
+            self.audio_pwa_browser_hint = cfg.audio_pwa_browser_hint
+            self.audio_pwa_command.setText(cfg.audio_pwa_command_preview)
+            self.audio_pwa_status.setText(f"PWA 설정됨: {cfg.audio_pwa_app_id}")
+            self.audio_launch_pwa.setEnabled(True)
+            self.audio_launch_pwa.setChecked(True)
+        else:
+            self.audio_launch_chrome.setChecked(True)
+            self._refresh_pwa_info()
 
         self.target_enabled.setChecked(cfg.target_enabled)
         self.target_urls = list(cfg.urls or [cfg.url])
@@ -3222,6 +3358,10 @@ class MainWindow(QtWidgets.QMainWindow):
             audio_minimize_delay_sec=self.audio_minimize_delay.value(),
             audio_relaunch_cooldown_sec=self.audio_relaunch_cooldown.value(),
             audio_repeat_mode=self.audio_repeat_mode.currentText(),
+            audio_launch_mode="pwa" if self.audio_launch_pwa.isChecked() else "chrome",
+            audio_pwa_app_id=self.audio_pwa_app_id_value,
+            audio_pwa_command_preview=self.audio_pwa_command.text().strip(),
+            audio_pwa_browser_hint=getattr(self, "audio_pwa_browser_hint", ""),
             target_enabled=self.target_enabled.isChecked(),
             target_window_mode=target_mode,
             target_start_delay_sec=self.target_start_delay.value(),
@@ -3324,6 +3464,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.target_repeat_mode,
         ]:
             widget.currentTextChanged.connect(self._autosave)
+        self.audio_launch_chrome.toggled.connect(self._autosave)
         for widget in [
             self.audio_start_delay,
             self.audio_minimize_delay,
@@ -3342,6 +3483,23 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self._save_config()
         self._sync_workers()
+
+    def _refresh_pwa_info(self) -> None:
+        app_id, browser_hint = detect_youtube_pwa_app_id()
+        self.audio_pwa_app_id_value = app_id
+        self.audio_pwa_browser_hint = browser_hint
+        if app_id:
+            command_preview = build_pwa_command_preview(app_id, browser_hint)
+            self.audio_pwa_command.setText(command_preview)
+            self.audio_pwa_status.setText(f"PWA 탐색됨: {app_id}")
+            self.audio_launch_pwa.setEnabled(True)
+            if not self.audio_launch_chrome.isChecked() and not self.audio_launch_pwa.isChecked():
+                self.audio_launch_pwa.setChecked(True)
+        else:
+            self.audio_pwa_command.setText("")
+            self.audio_pwa_status.setText("PWA 탐색 실패: 크롬 실행으로 대체됩니다.")
+            self.audio_launch_pwa.setEnabled(False)
+            self.audio_launch_chrome.setChecked(True)
 
     def _start_workers(self):
         self._save_config()
@@ -3400,6 +3558,7 @@ class AudioWorker:
         self.pending_launch_at: Optional[float] = None
         self.last_config_signature: Optional[tuple] = None
         self.once_launched = False
+        self.pwa_browser_hint = ""
 
     def run(self):
         while True:
@@ -3456,14 +3615,19 @@ class AudioWorker:
             if self.pending_launch_at is not None:
                 now = time.time()
                 if now >= self.pending_launch_at:
-                    candidates = self.cfg.audio_urls or [self.cfg.audio_url]
-                    url = ensure_youtube_autoplay(random.choice(candidates))
-                    profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "audio")
-                    os.makedirs(profile, exist_ok=True)
-                    launch_mode = self.cfg.audio_window_mode
-                    if (launch_mode or "").lower() == "minimized":
-                        launch_mode = "normal"
-                    self.proc = launch_chrome([url], profile, launch_mode, True, True)
+                    launch_mode = (self.cfg.audio_launch_mode or "chrome").lower()
+                    if launch_mode == "pwa" and self.cfg.audio_pwa_app_id:
+                        browser_hint = self.cfg.audio_pwa_browser_hint or self.pwa_browser_hint
+                        self.proc = launch_pwa(self.cfg.audio_pwa_app_id, browser_hint)
+                    else:
+                        candidates = self.cfg.audio_urls or [self.cfg.audio_url]
+                        url = ensure_youtube_autoplay(random.choice(candidates))
+                        profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "audio")
+                        os.makedirs(profile, exist_ok=True)
+                        chrome_mode = self.cfg.audio_window_mode
+                        if (chrome_mode or "").lower() == "minimized":
+                            chrome_mode = "normal"
+                        self.proc = launch_chrome([url], profile, chrome_mode, True, True)
                     self.last_launch = time.time()
                     self.pending_launch_at = None
                     self.once_launched = True
