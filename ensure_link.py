@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -50,6 +51,14 @@ NOTICE_BUNDLED_IMAGES = [
 NOTICE_BUNDLED_LABELS = {
     "notice_default_1.png": "기본 이미지 1",
     "notice_default_2.png": "기본 이미지 2",
+}
+NOTICE_WINDOW_PRESETS = {
+    "auto": ("자동", (0, 0)),
+    "compact": ("컴팩트", (520, 320)),
+    "standard": ("표준", (640, 420)),
+    "wide": ("와이드", (800, 420)),
+    "large": ("대형", (900, 560)),
+    "custom": ("수동 지정", (0, 0)),
 }
 NOTICE_FONT_FAMILIES = [
     "Noto Sans KR",
@@ -300,6 +309,9 @@ class AppConfig:
     notice_frame_padding: int = 24
     notice_repeat_enabled: bool = False
     notice_repeat_interval_min: int = 30
+    notice_window_width: int = 0
+    notice_window_height: int = 0
+    notice_window_preset: str = "auto"
     notice_image_mode: str = DEFAULT_NOTICE_IMAGE_MODE
     notice_image_path: str = DEFAULT_NOTICE_IMAGE_PATH
     notice_bundled_image: str = DEFAULT_NOTICE_BUNDLED_IMAGE
@@ -387,6 +399,9 @@ class AppConfig:
             notice_frame_padding=int(data.get("notice_frame_padding", 24)),
             notice_repeat_enabled=bool(data.get("notice_repeat_enabled", False)),
             notice_repeat_interval_min=int(data.get("notice_repeat_interval_min", 30)),
+            notice_window_width=int(data.get("notice_window_width", 0)),
+            notice_window_height=int(data.get("notice_window_height", 0)),
+            notice_window_preset=str(data.get("notice_window_preset", "auto")),
             notice_image_mode=str(data.get("notice_image_mode", DEFAULT_NOTICE_IMAGE_MODE)),
             notice_image_path=str(data.get("notice_image_path", DEFAULT_NOTICE_IMAGE_PATH)),
             notice_bundled_image=str(
@@ -623,7 +638,55 @@ def _scan_for_youtube_app_id(data: object) -> Optional[str]:
     return None
 
 
+def detect_youtube_pwa_from_shortcuts() -> tuple[str, str]:
+    if sys.platform != "win32":
+        return "", ""
+    start_menu = os.path.join(
+        os.environ.get("APPDATA", ""),
+        "Microsoft",
+        "Windows",
+        "Start Menu",
+        "Programs",
+        "Chrome 앱",
+    )
+    if not os.path.exists(start_menu):
+        return "", ""
+    for root, _dirs, files in os.walk(start_menu):
+        for name in files:
+            if not name.lower().endswith(".lnk"):
+                continue
+            link_path = os.path.join(root, name)
+            try:
+                cmd = [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    (
+                        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut("
+                        f"'{link_path.replace(\"'\", \"''\")}'"
+                        ");"
+                        "$s.TargetPath + '|' + $s.Arguments"
+                    ),
+                ]
+                output = subprocess.check_output(cmd, text=True).strip()
+            except Exception:
+                continue
+            if "|" not in output:
+                continue
+            target_path, arguments = output.split("|", 1)
+            match = re.search(r"--app-id=([a-zA-Z0-9]+)", arguments)
+            if match:
+                app_id = match.group(1)
+                launcher = target_path.strip()
+                if launcher:
+                    return app_id, launcher
+    return "", ""
+
+
 def detect_youtube_pwa_app_id() -> tuple[str, str]:
+    shortcut_app_id, shortcut_launcher = detect_youtube_pwa_from_shortcuts()
+    if shortcut_app_id:
+        return shortcut_app_id, shortcut_launcher
     candidates = [
         (
             os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "Chrome", "User Data"),
@@ -650,6 +713,8 @@ def detect_youtube_pwa_app_id() -> tuple[str, str]:
 def build_pwa_command_preview(app_id: str, browser_hint: str) -> str:
     if not app_id:
         return ""
+    if os.path.isfile(browser_hint):
+        return f"{browser_hint} --app-id={app_id} --autoplay-policy=no-user-gesture-required"
     browser = find_chrome_exe()
     if browser_hint == "msedge":
         edge = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "Application", "msedge.exe")
@@ -661,11 +726,16 @@ def build_pwa_command_preview(app_id: str, browser_hint: str) -> str:
 def launch_pwa(app_id: str, browser_hint: str) -> Optional[subprocess.Popen]:
     if not app_id:
         return None
-    browser = find_chrome_exe()
-    if browser_hint == "msedge":
-        edge = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "Application", "msedge.exe")
-        if edge and os.path.exists(edge):
-            browser = edge
+    if os.path.isfile(browser_hint):
+        browser = browser_hint
+    else:
+        browser = find_chrome_exe()
+        if browser_hint == "msedge":
+            edge = os.path.join(
+                os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "Application", "msedge.exe"
+            )
+            if edge and os.path.exists(edge):
+                browser = edge
     args = [
         browser,
         f"--app-id={app_id}",
@@ -878,6 +948,16 @@ def resolve_notice_image_path(cfg: AppConfig) -> str:
     if path and os.path.exists(path):
         return path
     return ""
+
+
+def resolve_notice_window_size(cfg: AppConfig) -> tuple[int, int]:
+    width = int(cfg.notice_window_width or 0)
+    height = int(cfg.notice_window_height or 0)
+    if width > 0 and height > 0:
+        return width, height
+    preset = (cfg.notice_window_preset or "auto").lower()
+    _, size = NOTICE_WINDOW_PRESETS.get(preset, NOTICE_WINDOW_PRESETS["auto"])
+    return size
 
 
 class StyledToggle(QtWidgets.QAbstractButton):
@@ -1639,8 +1719,11 @@ class NoticeWindow(QtWidgets.QWidget):
         hint = self.sizeHint()
         min_width = 520
         min_height = 320
-        width = min(int(geometry.width() * 0.6), max(min_width, hint.width()))
-        height = min(int(geometry.height() * 0.8), max(min_height, hint.height()))
+        preset_width, preset_height = resolve_notice_window_size(self.cfg)
+        width = max(min_width, preset_width, hint.width())
+        height = max(min_height, preset_height, hint.height())
+        width = min(int(geometry.width() * 0.9), width)
+        height = min(int(geometry.height() * 0.9), height)
         self.setGeometry(
             geometry.center().x() - width // 2,
             geometry.center().y() - height // 2,
@@ -1715,8 +1798,9 @@ class NoticePreviewWidget(QtWidgets.QWidget):
         self.notice.update_content(cfg)
         self.notice.adjustSize()
         size_hint = self.notice.sizeHint()
-        width = max(self._base_size.width(), size_hint.width())
-        height = max(self._base_size.height(), size_hint.height())
+        preset_width, preset_height = resolve_notice_window_size(cfg)
+        width = max(self._base_size.width(), size_hint.width(), preset_width)
+        height = max(self._base_size.height(), size_hint.height(), preset_height)
         self.notice.resize(QtCore.QSize(width, height))
         self.notice.show()
         self._sync_scale()
@@ -1765,6 +1849,9 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         preview_title = QtWidgets.QLabel("안내 팝업 미리보기")
         preview_title.setObjectName("CardTitle")
         preview_layout.addWidget(preview_title)
+        self.preview_size_label = QtWidgets.QLabel("")
+        self.preview_size_label.setObjectName("CardSubtitle")
+        preview_layout.addWidget(self.preview_size_label)
         self.preview = NoticePreviewWidget(self.palette, self.cfg)
         self.preview.setMinimumWidth(460)
         preview_layout.addWidget(self.preview, 1)
@@ -1957,6 +2044,27 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         frame_layout.addWidget(self.notice_repeat_hint)
 
         control_layout.addWidget(frame_group)
+
+        window_group = QtWidgets.QGroupBox("창 크기")
+        window_layout = QtWidgets.QFormLayout(window_group)
+        window_layout.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        window_layout.setHorizontalSpacing(12)
+        window_layout.setVerticalSpacing(10)
+        self.notice_size_preset = QtWidgets.QComboBox()
+        for key, (label, _size) in NOTICE_WINDOW_PRESETS.items():
+            self.notice_size_preset.addItem(label, key)
+        self.notice_window_width = StepperInput()
+        self.notice_window_width.setRange(360, 1400)
+        self.notice_window_width.setSingleStep(20)
+        self.notice_window_width.setDecimals(0)
+        self.notice_window_height = StepperInput()
+        self.notice_window_height.setRange(240, 1000)
+        self.notice_window_height.setSingleStep(20)
+        self.notice_window_height.setDecimals(0)
+        window_layout.addRow("크기 프리셋", self.notice_size_preset)
+        window_layout.addRow("너비(px)", self.notice_window_width)
+        window_layout.addRow("높이(px)", self.notice_window_height)
+        control_layout.addWidget(window_group)
         control_layout.addStretch()
 
         button_row = QtWidgets.QHBoxLayout()
@@ -2024,6 +2132,9 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.frame_padding.valueChanged.connect(self._update_preview)
         self.notice_repeat_enabled.stateChanged.connect(self._update_preview)
         self.notice_repeat_interval.valueChanged.connect(self._update_preview)
+        self.notice_size_preset.currentIndexChanged.connect(self._apply_window_preset)
+        self.notice_window_width.valueChanged.connect(self._update_preview)
+        self.notice_window_height.valueChanged.connect(self._update_preview)
 
     def _load_config(self, cfg: AppConfig) -> None:
         self.notice_title.setText(cfg.notice_title)
@@ -2060,11 +2171,20 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self._update_frame_color_button(cfg.notice_frame_color)
         self.notice_repeat_enabled.setChecked(bool(cfg.notice_repeat_enabled))
         self.notice_repeat_interval.setValue(float(cfg.notice_repeat_interval_min))
+        preset_key = (cfg.notice_window_preset or "auto").lower()
+        preset_index = self.notice_size_preset.findData(preset_key)
+        if preset_index >= 0:
+            self.notice_size_preset.setCurrentIndex(preset_index)
+        if cfg.notice_window_width > 0:
+            self.notice_window_width.setValue(float(cfg.notice_window_width))
+        if cfg.notice_window_height > 0:
+            self.notice_window_height.setValue(float(cfg.notice_window_height))
         saver_enabled = bool(cfg.saver_enabled)
         self.notice_repeat_enabled.setEnabled(not saver_enabled)
         self.notice_repeat_interval.setEnabled(not saver_enabled)
         self.notice_repeat_hint.setVisible(saver_enabled)
         self._handle_image_mode()
+        self._apply_window_preset()
 
     def _handle_image_mode(self) -> None:
         mode = self.image_mode.currentData()
@@ -2077,6 +2197,24 @@ class NoticeConfigDialog(QtWidgets.QDialog):
 
     def _frame_color_value(self) -> str:
         return getattr(self, "_frame_color_value_hex", "") or ""
+
+    def _apply_window_preset(self) -> None:
+        preset_key = self.notice_size_preset.currentData() or "auto"
+        _, size = NOTICE_WINDOW_PRESETS.get(preset_key, NOTICE_WINDOW_PRESETS["auto"])
+        if preset_key == "custom":
+            self.notice_window_width.setEnabled(True)
+            self.notice_window_height.setEnabled(True)
+        elif preset_key == "auto":
+            self.notice_window_width.setEnabled(False)
+            self.notice_window_height.setEnabled(False)
+            self.notice_window_width.setValue(0)
+            self.notice_window_height.setValue(0)
+        else:
+            self.notice_window_width.setEnabled(False)
+            self.notice_window_height.setEnabled(False)
+            self.notice_window_width.setValue(size[0])
+            self.notice_window_height.setValue(size[1])
+        self._update_preview()
 
     def _update_frame_color_button(self, color_hex: str) -> None:
         if not color_hex:
@@ -2198,6 +2336,9 @@ class NoticeConfigDialog(QtWidgets.QDialog):
             "notice_frame_padding": int(self.frame_padding.value()),
             "notice_repeat_enabled": bool(self.notice_repeat_enabled.isChecked()),
             "notice_repeat_interval_min": int(self.notice_repeat_interval.value()),
+            "notice_window_width": int(self.notice_window_width.value()),
+            "notice_window_height": int(self.notice_window_height.value()),
+            "notice_window_preset": str(self.notice_size_preset.currentData() or "auto"),
             "notice_image_mode": str(self.image_mode.currentData()),
             "notice_image_path": self.image_path.text().strip(),
             "notice_bundled_image": str(self.bundled_image.currentData()),
@@ -2225,12 +2366,20 @@ class NoticeConfigDialog(QtWidgets.QDialog):
             notice_frame_padding=config["notice_frame_padding"],
             notice_repeat_enabled=config["notice_repeat_enabled"],
             notice_repeat_interval_min=config["notice_repeat_interval_min"],
+            notice_window_width=config["notice_window_width"],
+            notice_window_height=config["notice_window_height"],
+            notice_window_preset=config["notice_window_preset"],
             notice_image_mode=config["notice_image_mode"],
             notice_image_path=config["notice_image_path"],
             notice_bundled_image=config["notice_bundled_image"],
             notice_image_height=config["notice_image_height"],
         )
         self.preview.apply_config(preview_cfg)
+        width, height = resolve_notice_window_size(preview_cfg)
+        if width > 0 and height > 0:
+            self.preview_size_label.setText(f"현재 크기: {width} x {height}px")
+        else:
+            self.preview_size_label.setText("현재 크기: 자동")
 
     def get_notice_config(self) -> dict:
         return self._build_notice_config()
@@ -2633,8 +2782,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_ui(self):
         self.setWindowTitle("AutoWake")
-        self.resize(700, 580)
-        self.setMinimumSize(660, 560)
+        self.resize(720, 660)
+        self.setMinimumSize(680, 620)
         icon = load_app_icon()
         if not icon.isNull():
             self.setWindowIcon(icon)
@@ -3029,6 +3178,9 @@ class MainWindow(QtWidgets.QMainWindow):
             "notice_frame_padding": cfg.notice_frame_padding,
             "notice_repeat_enabled": cfg.notice_repeat_enabled,
             "notice_repeat_interval_min": cfg.notice_repeat_interval_min,
+            "notice_window_width": cfg.notice_window_width,
+            "notice_window_height": cfg.notice_window_height,
+            "notice_window_preset": cfg.notice_window_preset,
             "notice_image_mode": cfg.notice_image_mode,
             "notice_image_path": cfg.notice_image_path,
             "notice_bundled_image": cfg.notice_bundled_image,
@@ -3416,6 +3568,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 notice_config.get(
                     "notice_repeat_interval_min", self.cfg.notice_repeat_interval_min
                 )
+            ),
+            notice_window_width=int(
+                notice_config.get("notice_window_width", self.cfg.notice_window_width)
+            ),
+            notice_window_height=int(
+                notice_config.get("notice_window_height", self.cfg.notice_window_height)
+            ),
+            notice_window_preset=str(
+                notice_config.get("notice_window_preset", self.cfg.notice_window_preset)
             ),
             notice_image_mode=str(
                 notice_config.get("notice_image_mode", self.cfg.notice_image_mode)
