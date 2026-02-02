@@ -657,17 +657,14 @@ def detect_youtube_pwa_from_shortcuts() -> tuple[str, str]:
                 continue
             link_path = os.path.join(root, name)
             try:
-                cmd = [
-                    "powershell",
-                    "-NoProfile",
-                    "-Command",
-                    (
-                        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut("
-                        f"'{link_path.replace(\"'\", \"''\")}'"
-                        ");"
-                        "$s.TargetPath + '|' + $s.Arguments"
-                    ),
-                ]
+                safe_link_path = link_path.replace("'", "''")
+                command = (
+                    "$s=(New-Object -ComObject WScript.Shell).CreateShortcut("
+                    f"'{safe_link_path}'"
+                    ");"
+                    "$s.TargetPath + '|' + $s.Arguments"
+                )
+                cmd = ["powershell", "-NoProfile", "-Command", command]
                 output = subprocess.check_output(cmd, text=True).strip()
             except Exception:
                 continue
