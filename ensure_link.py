@@ -3326,6 +3326,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _open_notice_editor(self) -> None:
         cfg = replace(self.cfg, **(self.notice_config or {}))
         dialog = NoticeConfigDialog(self.palette, cfg, self)
+        self._bring_dialog_to_front(dialog)
         if dialog.exec() != QtWidgets.QDialog.Accepted:
             return
         self.notice_config = dialog.get_notice_config()
@@ -3915,7 +3916,15 @@ class AudioWorker:
                 launch_mode = (self.cfg.audio_launch_mode or "chrome").lower()
                 if launch_mode == "pwa" and self.cfg.audio_pwa_app_id:
                     existing = find_chrome_processes_by_app_id(self.cfg.audio_pwa_app_id)
-                    if existing:
+                    visible = [pid for pid in existing if find_window_handles_by_pid(pid)]
+                    if visible:
+                        self.external_pid = visible[0]
+                        self.last_launch = time.time()
+                        self.pending_launch_at = None
+                        self.once_launched = True
+                        time.sleep(self.cfg.poll_sec)
+                        continue
+                    if existing and time.time() - self.last_launch < self.cfg.audio_relaunch_cooldown_sec:
                         self.external_pid = existing[0]
                         self.last_launch = time.time()
                         self.pending_launch_at = None
