@@ -2258,7 +2258,6 @@ class NoticeConfigDialog(QtWidgets.QDialog):
         self.notice_size_preset.currentIndexChanged.connect(self._apply_window_preset)
         self.notice_window_width.valueChanged.connect(self._update_preview)
         self.notice_window_height.valueChanged.connect(self._update_preview)
-        self.audio_repeat_mode.currentTextChanged.connect(self._refresh_pwa_preview)
 
     def _load_config(self, cfg: AppConfig) -> None:
         self.notice_title.setText(cfg.notice_title)
@@ -4003,12 +4002,16 @@ class AudioWorker:
                     self.last_launch = time.time()
                     self.pending_launch_at = None
                     self.once_launched = True
-                    if self.proc and (self.cfg.audio_window_mode or "").lower() == "minimized":
+                if (self.cfg.audio_window_mode or "").lower() == "minimized":
+                    minimize_delay = max(1.0, float(self.cfg.audio_minimize_delay_sec))
+                    if self.proc:
                         self.pending_minimize_pid = self.proc.pid
                         self.pending_restore_pid = self.proc.pid
                         self.pending_restore_at = time.time() + 0.3
                         self.pending_restore_again_at = time.time() + 1.2
-                        minimize_delay = max(1.0, float(self.cfg.audio_minimize_delay_sec))
+                        self.pending_minimize_at = time.time() + minimize_delay
+                    elif self.external_pid:
+                        self.pending_minimize_pid = self.external_pid
                         self.pending_minimize_at = time.time() + minimize_delay
             if self.pending_restore_pid and (self.cfg.audio_window_mode or "").lower() == "minimized":
                 if time.time() >= (self.pending_restore_at or 0):
@@ -4027,6 +4030,18 @@ class AudioWorker:
                     self.pending_restore_again_at = None
             if self.pending_minimize_pid and (self.cfg.audio_window_mode or "").lower() == "minimized":
                 if time.time() >= (self.pending_minimize_at or 0):
+                    if not find_window_handles_by_pid(self.pending_minimize_pid):
+                        if (
+                            (self.cfg.audio_launch_mode or "chrome").lower() == "pwa"
+                            and self.cfg.audio_pwa_app_id
+                        ):
+                            candidates = [
+                                pid
+                                for pid in find_chrome_processes_by_app_id(self.cfg.audio_pwa_app_id)
+                                if find_window_handles_by_pid(pid)
+                            ]
+                            if candidates:
+                                self.pending_minimize_pid = candidates[0]
                     if find_window_handles_by_pid(self.pending_minimize_pid):
                         minimize_window(self.pending_minimize_pid)
                         self.last_minimized_pid = self.pending_minimize_pid
