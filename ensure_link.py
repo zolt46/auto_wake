@@ -663,6 +663,18 @@ def detect_youtube_pwa_from_shortcuts() -> tuple[str, str, str, bool]:
             "Programs",
         ),
     ]
+    extra_roots = [
+        os.path.join(os.environ.get("USERPROFILE", ""), "Desktop"),
+        os.path.join(os.environ.get("PUBLIC", ""), "Desktop"),
+        os.path.join(
+            os.environ.get("APPDATA", ""),
+            "Microsoft",
+            "Internet Explorer",
+            "Quick Launch",
+            "User Pinned",
+            "TaskBar",
+        ),
+    ]
     app_folders = [
         "Chrome Apps",
         "Chrome 앱",
@@ -679,6 +691,9 @@ def detect_youtube_pwa_from_shortcuts() -> tuple[str, str, str, bool]:
                 candidate_dirs.append(candidate)
     fallback_roots = [root for root in start_menu_roots if root and os.path.exists(root)]
     search_dirs = candidate_dirs or fallback_roots
+    for root in extra_roots:
+        if root and os.path.exists(root):
+            search_dirs.append(root)
     for root in search_dirs:
         limit_to_youtube = root in fallback_roots and not candidate_dirs
         if not os.path.exists(root):
@@ -705,7 +720,8 @@ def detect_youtube_pwa_from_shortcuts() -> tuple[str, str, str, bool]:
                 target_path, arguments = output.split("|", 1)
                 target_path = target_path.strip().strip('"')
                 arguments = arguments.strip()
-                match = re.search(r"--app-id=([a-zA-Z0-9]+)", arguments)
+                combined = f"{target_path} {arguments}".strip()
+                match = re.search(r"--app-id=([a-zA-Z0-9]+)", combined)
                 if match:
                     app_id = match.group(1)
                     if app_id != YOUTUBE_PWA_APP_ID:
