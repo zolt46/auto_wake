@@ -3324,13 +3324,26 @@ class MainWindow(QtWidgets.QMainWindow):
         }
 
     def _open_notice_editor(self) -> None:
-        cfg = replace(self.cfg, **(self.notice_config or {}))
-        dialog = NoticeConfigDialog(self.palette, cfg, self)
-        self._bring_dialog_to_front(dialog)
-        if dialog.exec() != QtWidgets.QDialog.Accepted:
-            return
-        self.notice_config = dialog.get_notice_config()
-        self._save_config()
+        try:
+            cfg = replace(self.cfg, **(self.notice_config or {}))
+            dialog = NoticeConfigDialog(self.palette, cfg, self)
+            self._bring_dialog_to_front(dialog)
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
+            dialog.setFocus()
+            if dialog.exec() != QtWidgets.QDialog.Accepted:
+                return
+            self.notice_config = dialog.get_notice_config()
+            self._save_config()
+        except Exception as exc:
+            log(f"NOTICE dialog error: {exc}")
+            QtWidgets.QMessageBox.warning(
+                self,
+                "안내 팝업 오류",
+                "안내 팝업 구성 창을 여는 중 오류가 발생했습니다.\n"
+                "로그를 확인해주세요.",
+            )
 
     def _browse_image(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
