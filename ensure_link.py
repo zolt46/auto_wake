@@ -192,6 +192,18 @@ def log(msg: str) -> None:
         file.write(f"{datetime.now()} - {msg}\n")
 
 
+def set_system_volume(percent: float) -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        value = max(0, min(100, int(percent)))
+        volume = int((value / 100) * 0xFFFF)
+        packed = volume | (volume << 16)
+        ctypes.windll.winmm.waveOutSetVolume(0, packed)
+    except Exception as exc:
+        log(f"VOLUME set error: {exc}")
+
+
 def ensure_streams() -> None:
     if sys.stdout is None:
         sys.stdout = open(os.devnull, "w", encoding="utf-8")
@@ -1726,6 +1738,9 @@ class NoticeWindow(QtWidgets.QWidget):
         self.setPalette(qpalette)
         self.setStyleSheet(
             f"""
+            #NoticeWindow {{
+                background: {frame_color};
+            }}
             #NoticeFrame {{
                 background: {palette['bg_card']};
                 border-radius: 16px;
@@ -4367,6 +4382,13 @@ class SaverWorker(QtCore.QObject):
                         saver_trigger_at=time.time(),
                     )
                 self.window.show_fullscreen()
+                if not self.saver_visible:
+                    self.saver_visible = True
+                    write_notice_state(
+                        self.cfg.work_dir,
+                        saver_active=1.0,
+                        saver_trigger_at=time.time(),
+                    )
         if self.window.isVisible():
             self.window.refresh()
 
