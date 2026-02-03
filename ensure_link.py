@@ -948,6 +948,15 @@ def restore_window(pid: int) -> None:
         user32.SetForegroundWindow(hwnd)
 
 
+def refresh_window(pid: int) -> None:
+    if not pid:
+        return
+    handles = find_window_handles_by_pid(pid)
+    for hwnd in handles:
+        user32.PostMessageW(hwnd, 0x0100, 0x74, 0)
+        user32.PostMessageW(hwnd, 0x0101, 0x74, 0)
+
+
 def terminate_process(pid: int) -> None:
     if not pid:
         return
@@ -3910,6 +3919,8 @@ class AudioWorker:
         self.pending_restore_pid: Optional[int] = None
         self.pending_restore_at: Optional[float] = None
         self.pending_restore_again_at: Optional[float] = None
+        self.pending_refresh_pid: Optional[int] = None
+        self.pending_refresh_at: Optional[float] = None
         self.last_launch = 0.0
         self.pending_launch_at: Optional[float] = None
         self.last_config_signature: Optional[tuple] = None
@@ -4005,6 +4016,9 @@ class AudioWorker:
                         )
                         if self.proc is None:
                             log("PWA launch failed; falling back to Chrome.")
+                        else:
+                            self.pending_refresh_pid = self.proc.pid
+                            self.pending_refresh_at = time.time() + 2.0
                     if launch_mode != "chrome" and self.proc is not None:
                         pass
                     else:
@@ -4038,6 +4052,23 @@ class AudioWorker:
                         restore_window(self.pending_restore_pid)
                         self.pending_restore_pid = None
                         self.pending_restore_at = None
+            if self.pending_refresh_pid and self.pending_refresh_at:
+                if time.time() >= self.pending_refresh_at:
+                    if not find_window_handles_by_pid(self.pending_refresh_pid):
+                        if (
+                            (self.cfg.audio_launch_mode or "chrome").lower() == "pwa"
+                            and self.cfg.audio_pwa_app_id
+                        ):
+                            candidates = [
+                                pid
+                                for pid in find_chrome_processes_by_app_id(self.cfg.audio_pwa_app_id)
+                                if find_window_handles_by_pid(pid)
+                            ]
+                            if candidates:
+                                self.pending_refresh_pid = candidates[0]
+                    refresh_window(self.pending_refresh_pid)
+                    self.pending_refresh_pid = None
+                    self.pending_refresh_at = None
             if (
                 self.pending_restore_again_at
                 and (self.cfg.audio_window_mode or "").lower() == "minimized"
@@ -4081,6 +4112,8 @@ class AudioWorker:
         self.pending_restore_pid = None
         self.pending_restore_at = None
         self.pending_restore_again_at = None
+        self.pending_refresh_pid = None
+        self.pending_refresh_at = None
         self.pending_launch_at = None
         self.pending_launch_at = None
 
