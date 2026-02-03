@@ -45,6 +45,7 @@ DEFAULT_NOTICE_IMAGE_MODE = "bundled"
 DEFAULT_NOTICE_IMAGE_HEIGHT = 120
 DEFAULT_NOTICE_IMAGE_PATH = ""
 DEFAULT_NOTICE_BUNDLED_IMAGE = "notice_default_1.png"
+YOUTUBE_PWA_APP_ID = "agimnkijcaahngcdmfeangaknmldooml"
 NOTICE_BUNDLED_IMAGES = [
     "notice_default_1.png",
     "notice_default_2.png",
@@ -709,6 +710,8 @@ def detect_youtube_pwa_from_shortcuts() -> tuple[str, str, str, bool]:
                 match = re.search(r"--app-id=([a-zA-Z0-9]+)", arguments)
                 if match:
                     app_id = match.group(1)
+                    if app_id != YOUTUBE_PWA_APP_ID:
+                        continue
                     launcher = target_path.strip().strip('"')
                     if launcher:
                         return app_id, launcher, arguments.strip(), "chrome_proxy" in launcher.lower()
@@ -738,6 +741,8 @@ def detect_youtube_pwa_app_id() -> tuple[str, str, str, bool]:
                 continue
             app_id = _scan_for_youtube_app_id(data)
             if app_id:
+                if app_id != YOUTUBE_PWA_APP_ID:
+                    continue
                 return app_id, browser_hint, "", False
     return "", "", "", False
 
