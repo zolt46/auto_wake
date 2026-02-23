@@ -240,18 +240,6 @@ def log(msg: str) -> None:
             continue
 
 
-def set_system_volume(percent: float) -> None:
-    if sys.platform != "win32":
-        return
-    try:
-        value = max(0, min(100, int(percent)))
-        volume = int((value / 100) * 0xFFFF)
-        packed = volume | (volume << 16)
-        ctypes.windll.winmm.waveOutSetVolume(0, packed)
-    except Exception as exc:
-        log(f"VOLUME set error: {exc}")
-
-
 def ensure_streams() -> None:
     if sys.stdout is None:
         sys.stdout = open(os.devnull, "w", encoding="utf-8")
@@ -484,17 +472,28 @@ def verify_password(password: str, password_hash: str, salt: str) -> bool:
 
 
 def load_config() -> AppConfig:
-    os.makedirs(WORK_DIR, exist_ok=True)
-    primary_path = config_file_path(WORK_DIR)
+    config_root = WORK_DIR
+    try:
+        os.makedirs(config_root, exist_ok=True)
+    except Exception as exc:
+        log(f"CONFIG root unavailable ({config_root}): {exc}")
+        config_root = os.getcwd()
+        try:
+            os.makedirs(config_root, exist_ok=True)
+        except Exception as fallback_exc:
+            log(f"CONFIG fallback root unavailable ({config_root}): {fallback_exc}")
+    primary_path = config_file_path(config_root)
     if not os.path.exists(primary_path):
-        cfg = AppConfig()
+        cfg = AppConfig(work_dir=config_root)
         save_config(cfg)
         return cfg
     try:
         with open(primary_path, "r", encoding="utf-8") as file:
             data = json.load(file)
         cfg = AppConfig.from_dict(data)
-        if cfg.work_dir and cfg.work_dir != WORK_DIR:
+        work_norm = os.path.normcase(os.path.abspath(cfg.work_dir or WORK_DIR))
+        root_norm = os.path.normcase(os.path.abspath(config_root))
+        if cfg.work_dir and work_norm != root_norm:
             alt_path = config_file_path(cfg.work_dir)
             if os.path.exists(alt_path):
                 with open(alt_path, "r", encoding="utf-8") as file:
@@ -508,12 +507,23 @@ def load_config() -> AppConfig:
         return cfg
     except Exception as exc:
         log(f"CONFIG load error: {exc}")
-        return AppConfig()
+        return AppConfig(work_dir=config_root)
 
 
 def save_config(cfg: AppConfig) -> None:
     work_dir = cfg.work_dir or WORK_DIR
-    os.makedirs(work_dir, exist_ok=True)
+    try:
+        os.makedirs(work_dir, exist_ok=True)
+    except Exception as exc:
+        log(f"CONFIG work_dir unavailable ({work_dir}): {exc}")
+        work_dir = os.getcwd()
+        try:
+            os.makedirs(work_dir, exist_ok=True)
+        except Exception as fallback_exc:
+            log(f"CONFIG fallback work_dir unavailable ({work_dir}): {fallback_exc}")
+            return
+        cfg.work_dir = work_dir
+
     data = asdict(cfg)
     try:
         with open(config_file_path(work_dir), "w", encoding="utf-8") as file:
@@ -2694,12 +2704,16 @@ class ProcessManager:
         creationflags = (
             subprocess.CREATE_NO_WINDOW if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW") else 0
         )
-        proc = subprocess.Popen(
-            args,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=creationflags,
-        )
+        try:
+            proc = subprocess.Popen(
+                args,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=creationflags,
+            )
+        except Exception as exc:
+            log(f"Spawn worker error ({mode}): {exc}")
+            return
         self.processes[mode] = proc
         log(f"Spawned worker: {mode} ({' '.join(args)})")
 
@@ -3807,17 +3821,39 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_audio_mode_availability()
 
     def _start_workers(self):
-        self._save_config()
-        if self.is_running:
-            return
-        self.is_running = True
-        self._sync_workers()
-        self._update_run_state_labels()
+        try:
+            self._save_config()
+            if self.is_running:
+                return
+            self.is_running = True
+            self._sync_workers()
+            self._update_run_state_labels()
+        except Exception as exc:
+            self.is_running = False
+            log(f"START workers error: {exc}")
+            self._update_run_state_labels()
 
     def _stop_workers(self):
         self.process_manager.stop_all()
         self.is_running = False
         self._update_run_state_labels()
+
+    def _sync_workers(self) -> None:
+        if not self.is_running:
+            return
+        cfg = self.cfg
+        if cfg.audio_enabled:
+            self.process_manager.start("audio")
+        else:
+            self.process_manager.stop("audio")
+        if cfg.target_enabled or cfg.notice_enabled:
+            self.process_manager.start("target")
+        else:
+            self.process_manager.stop("target")
+        if cfg.saver_enabled:
+            self.process_manager.start("saver")
+        else:
+            self.process_manager.stop("saver")
 
     def _sync_workers(self) -> None:
         if not self.is_running:
