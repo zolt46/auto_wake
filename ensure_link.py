@@ -217,10 +217,27 @@ def update_notice_state_counter(work_dir: str, key: str, delta: int) -> None:
 
 
 def log(msg: str) -> None:
-    os.makedirs(WORK_DIR, exist_ok=True)
-    path = os.path.join(WORK_DIR, "autowake.log")
-    with open(path, "a", encoding="utf-8") as file:
-        file.write(f"{datetime.now()} - {msg}\n")
+    timestamped = f"{datetime.now()} - {msg}\n"
+    candidates: list[str] = []
+    try:
+        candidates.append(WORK_DIR)
+    except Exception:
+        pass
+    try:
+        candidates.append(os.getcwd())
+    except Exception:
+        pass
+    for directory in candidates:
+        try:
+            if not directory:
+                continue
+            os.makedirs(directory, exist_ok=True)
+            path = os.path.join(directory, "autowake.log")
+            with open(path, "a", encoding="utf-8") as file:
+                file.write(timestamped)
+            return
+        except Exception:
+            continue
 
 
 def set_system_volume(percent: float) -> None:
@@ -507,6 +524,19 @@ def save_config(cfg: AppConfig) -> None:
                 json.dump(data, file, ensure_ascii=False, indent=2)
     except Exception as exc:
         log(f"CONFIG save error: {exc}")
+        return
+
+    work_norm = os.path.normcase(os.path.abspath(work_dir))
+    default_norm = os.path.normcase(os.path.abspath(WORK_DIR))
+    if work_norm == default_norm:
+        return
+
+    try:
+        os.makedirs(WORK_DIR, exist_ok=True)
+        with open(config_file_path(WORK_DIR), "w", encoding="utf-8") as file:
+            json.dump(data, file, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        log(f"CONFIG mirror save error: {exc}")
 
 
 def _blend_with_white(hex_color: str, ratio: float) -> str:
