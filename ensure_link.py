@@ -1744,36 +1744,22 @@ class NoticeWindow(QtWidgets.QWidget):
         qpalette.setColor(QtGui.QPalette.Window, QtGui.QColor(frame_color))
         self.setPalette(qpalette)
         self.setStyleSheet(
-            f"""
-            #NoticeWindow {{
-                background: {frame_color};
-            }}
-            #NoticeFrame {{
-                background: {palette['bg_card']};
-                border-radius: 16px;
-                border: none;
-            }}
-            #NoticeClose {{
-                background: {palette['accent']};
-                color: #0b1220;
-                font-weight: 800;
-                border-radius: 10px;
-                padding: 6px 16px;
-                min-width: 120px;
-                min-height: 40px;
-            }}
-            #NoticeTitle {{
-                color: {palette['text_primary']};
-                font-size: 18px;
-                font-weight: 700;
-            }}
-            #NoticeBody {{
-                color: {palette['text_muted']};
-            }}
-            #NoticeFooter {{
-                color: {palette['text_muted']};
-            }}
-            """
+            " ".join(
+                [
+                    f"#NoticeFrame {{ background: {palette['bg_card']}; border-radius: 16px; border: none; }}",
+                    (
+                        "#NoticeClose { "
+                        f"background: {palette['accent']}; color: #0b1220; font-weight: 800; "
+                        "border-radius: 10px; padding: 6px 16px; min-width: 120px; min-height: 40px; }"
+                    ),
+                    (
+                        "#NoticeTitle { "
+                        f"color: {palette['text_primary']}; font-size: 18px; font-weight: 700; }}"
+                    ),
+                    f"#NoticeBody {{ color: {palette['text_muted']}; }}",
+                    f"#NoticeFooter {{ color: {palette['text_muted']}; }}",
+                ]
+            )
         )
         self._apply_window_icon()
 
