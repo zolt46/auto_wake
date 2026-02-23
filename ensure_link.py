@@ -22,6 +22,28 @@ from PySide6 import QtCore, QtGui, QtWidgets
 # ================== 설정 ==================
 DEFAULT_URL = "https://lib.koreatech.ac.kr/search/i-discovery"
 DEFAULT_AUDIO_URL = "https://www.youtube.com/watch?v=0zfwYWHRWhQ"
+DEFAULT_URLS = [
+    "https://lib.koreatech.ac.kr/search/i-discovery",
+    "https://dl.nanet.go.kr/activexUpdate.do?retUrl=",
+    "https://www.nl.go.kr/",
+]
+DEFAULT_AUDIO_URLS = [
+    "https://www.youtube.com/watch?v=0zfwYWHRWhQ",
+    "https://www.youtube.com/watch?v=8Dr1Ssb6D9w",
+    "https://www.youtube.com/watch?v=kx7V8vXR0Sg",
+    "youtube.com/watch?v=PuVO9fow2iI&pp=2AYy",
+    "https://www.youtube.com/watch?v=fGbKaz442H4",
+    "https://www.youtube.com/watch?v=h1nhj80SC_c",
+    "https://www.youtube.com/watch?v=edoeWZuKYc8",
+    "https://www.youtube.com/watch?v=HsyukEKFRgk",
+    "https://www.youtube.com/watch?v=qcoZ7eo4EZ8",
+    "https://www.youtube.com/watch?v=iDH62BjGuFY",
+    "https://www.youtube.com/watch?v=UVlbWtz5o74",
+    "https://www.youtube.com/watch?v=js4QAuyiRNM",
+    "https://www.youtube.com/watch?v=kncTDoCPxxQ",
+    "https://www.youtube.com/watch?v=g6DDy459EtQ",
+    "https://www.youtube.com/watch?v=cG65SMxqTY8",
+]
 DEFAULT_LOCAL_IMAGE = r"C:\AutoWake\default_saver.png"
 
 WORK_DIR = r"C:\AutoWake"
@@ -337,9 +359,9 @@ class AppConfig:
 
     def __post_init__(self):
         if self.urls is None:
-            self.urls = [self.url]
+            self.urls = list(DEFAULT_URLS)
         if self.audio_urls is None:
-            self.audio_urls = [self.audio_url]
+            self.audio_urls = list(DEFAULT_AUDIO_URLS)
 
     @classmethod
     def from_dict(cls, data: dict) -> "AppConfig":
@@ -351,7 +373,7 @@ class AppConfig:
 
         return cls(
             url=data.get("url", DEFAULT_URL),
-            urls=list(data.get("urls", [])) or [data.get("url", DEFAULT_URL)],
+            urls=list(data.get("urls", [])) or list(DEFAULT_URLS),
             image_path=data.get("image_path", DEFAULT_LOCAL_IMAGE),
             work_dir=data.get("work_dir", WORK_DIR),
             idle_to_show_sec=float(data.get("idle_to_show_sec", 1200.0)),
@@ -368,9 +390,7 @@ class AppConfig:
             saver_image_mode=str(data.get("saver_image_mode", "bundled")),
             saver_display_mode=str(data.get("saver_display_mode", "workarea")),
             audio_url=data.get("audio_url", DEFAULT_AUDIO_URL),
-            audio_urls=list(data.get("audio_urls", [])) or [
-                data.get("audio_url", DEFAULT_AUDIO_URL)
-            ],
+            audio_urls=list(data.get("audio_urls", [])) or list(DEFAULT_AUDIO_URLS),
             audio_enabled=bool(data.get("audio_enabled", False)),
             audio_window_mode=data.get("audio_window_mode", "minimized"),
             audio_start_delay_sec=float(data.get("audio_start_delay_sec", 2.0)),
@@ -1194,9 +1214,9 @@ class StepperInput(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
 
-        self.minus_button = QtWidgets.QPushButton("▼")
+        self.minus_button = QtWidgets.QPushButton("-")
         self.minus_button.setObjectName("StepperButton")
-        self.plus_button = QtWidgets.QPushButton("▲")
+        self.plus_button = QtWidgets.QPushButton("+")
         self.plus_button.setObjectName("StepperButton")
         arrow_font = QtGui.QFont()
         arrow_font.setPointSize(12)
@@ -2693,6 +2713,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._connect_autosave()
         self._setup_tray()
         self._ensure_default_password()
+        QtCore.QTimer.singleShot(0, self._start_workers)
 
     def _apply_palette(self):
         self.palette = build_palette(self.cfg.accent_theme, self.cfg.accent_color)
@@ -2729,6 +2750,23 @@ class MainWindow(QtWidgets.QMainWindow):
                     "QPushButton { "
                     f"background: {palette['accent']}; border-radius: 10px; padding: 8px 14px; "
                     "color: #0b1220; font-weight: 700; font-size: 14px; }"
+                ),
+                (
+                    "QPushButton#ModeButton { "
+                    f"background: {palette['bg_card_alt']}; color: {palette['text_primary']}; "
+                    f"border: 1px solid {palette['border']}; padding: 6px 10px; border-radius: 8px; "
+                    "font-size: 12px; font-weight: 600; }"
+                ),
+                (
+                    "QPushButton#ModeButton:checked { "
+                    f"background: {palette['accent']}; color: #0b1220; border: 2px solid {palette['accent_dark']}; "
+                    "font-weight: 800; }"
+                ),
+                (
+                    "QPushButton#StepperButton { "
+                    f"background: {palette['bg_card_alt']}; color: {palette['text_primary']}; "
+                    f"border: 1px solid {palette['border']}; border-radius: 10px; "
+                    "min-width: 28px; min-height: 28px; padding: 0px; font-size: 16px; font-weight: 800; }"
                 ),
                 f"QPushButton:hover {{ background: {palette['accent_soft']}; }}",
                 f"QPushButton:pressed {{ background: {palette['accent_dark']}; color: #f8fafc; }}",
