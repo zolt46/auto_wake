@@ -528,6 +528,10 @@ def save_config(cfg: AppConfig) -> None:
     try:
         with open(config_file_path(work_dir), "w", encoding="utf-8") as file:
             json.dump(data, file, ensure_ascii=False, indent=2)
+        if work_dir != WORK_DIR:
+            os.makedirs(WORK_DIR, exist_ok=True)
+            with open(config_file_path(WORK_DIR), "w", encoding="utf-8") as file:
+                json.dump(data, file, ensure_ascii=False, indent=2)
     except Exception as exc:
         log(f"CONFIG save error: {exc}")
         return
@@ -4341,6 +4345,13 @@ class SaverWorker(QtCore.QObject):
                         saver_trigger_at=time.time(),
                     )
                 self.window.show_fullscreen()
+                if not self.saver_visible:
+                    self.saver_visible = True
+                    write_notice_state(
+                        self.cfg.work_dir,
+                        saver_active=1.0,
+                        saver_trigger_at=time.time(),
+                    )
         if self.window.isVisible():
             self.window.refresh()
 
