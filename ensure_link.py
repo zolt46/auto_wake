@@ -21,26 +21,21 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 # ================== 설정 ==================
 DEFAULT_URL = "https://lib.koreatech.ac.kr/search/i-discovery"
-DEFAULT_AUDIO_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+DEFAULT_AUDIO_URL = "https://www.youtube.com/watch?v=0zfwYWHRWhQ"
 DEFAULT_LOCAL_IMAGE = r"C:\AutoWake\default_saver.png"
 
 WORK_DIR = r"C:\AutoWake"
 DEFAULT_BUNDLED_IMAGE = os.path.join("assets", "default_saver.png")
 DEFAULT_NOTICE_TITLE = "이용 안내"
-DEFAULT_NOTICE_BODY = (
-    "한국기술교육대학교 참고자료실 도서 검색 전용 PC입니다.\n\n"
-    "본 PC는 학습·연구 목적의 정보 탐색을 위해 운영됩니다.\n"
-    "올바른 사용을 권장드리며, 규정을 위반하는 경우 안내 및 조치가 이루어질 수 있습니다.\n\n"
-    "이용해 주셔서 감사합니다."
-)
-DEFAULT_NOTICE_FOOTER = (
-    "[전체화면/키오스크 종료 안내]\n"
-    "• F11: 전체화면 해제\n"
-    "• ESC: 일부 전체화면 해제\n"
-    "• Alt + F4: 크롬 종료\n\n"
-    "크롬이 종료되면 몇 초 후 자동으로 다시 실행됩니다.\n"
-    "계속 이용하려면 크롬 창을 종료하지 않고 사용해 주세요."
-)
+DEFAULT_NOTICE_BODY = """
+해당 PC는 한국기술교육대학교 참고자료실 도서 검색 및 자료 출력 전용 PC입니다.
+
+본 PC는 학습·연구 목적의 정보 탐색 및 논문 등의 전자 자료 출력을 위해 운영됩니다.
+
+올바른 사용을 권장드리며, 내규 또는 보편적 정보 이용 원칙을 위반하는 경우 안내 및 조치가 이루어질 수 있습니다.
+
+이용해 주셔서 감사합니다.
+
 DEFAULT_NOTICE_IMAGE_MODE = "bundled"
 DEFAULT_NOTICE_IMAGE_HEIGHT = 120
 DEFAULT_NOTICE_IMAGE_PATH = ""
@@ -263,7 +258,7 @@ class AppConfig:
     urls: list[str] = None
     image_path: str = DEFAULT_LOCAL_IMAGE
     work_dir: str = WORK_DIR
-    idle_to_show_sec: float = 10.0
+    idle_to_show_sec: float = 1200.0
     active_threshold_sec: float = 1.0
     poll_sec: float = 0.5
     chrome_relaunch_cooldown_sec: float = 10.0
@@ -273,13 +268,13 @@ class AppConfig:
     chrome_repeat: bool = True
     ui_theme: str = "accent"
     saver_image_mode: str = "bundled"
-    saver_display_mode: str = "full"
+    saver_display_mode: str = "workarea"
     audio_url: str = DEFAULT_AUDIO_URL
     audio_urls: list[str] = None
-    audio_enabled: bool = True
+    audio_enabled: bool = False
     audio_window_mode: str = "minimized"
     audio_start_delay_sec: float = 2.0
-    audio_relaunch_cooldown_sec: float = 10.0
+    audio_relaunch_cooldown_sec: float = 180.0
     audio_repeat_mode: str = "repeat"
     audio_minimize_delay_sec: float = 10.0
     audio_launch_mode: str = "chrome"
@@ -289,42 +284,42 @@ class AppConfig:
     audio_pwa_arguments: str = ""
     audio_pwa_use_proxy: bool = False
     target_enabled: bool = True
-    target_window_mode: str = "fullscreen"
-    target_start_delay_sec: float = 1.0
-    target_relaunch_cooldown_sec: float = 10.0
+    target_window_mode: str = "normal"
+    target_start_delay_sec: float = 2.0
+    target_relaunch_cooldown_sec: float = 600.0
     target_refocus_interval_sec: float = 3.0
     target_repeat_mode: str = "repeat"
-    saver_start_delay_sec: float = 1.0
+    saver_start_delay_sec: float = 0.5
     notice_enabled: bool = True
     notice_title: str = DEFAULT_NOTICE_TITLE
     notice_body: str = DEFAULT_NOTICE_BODY
     notice_footer: str = DEFAULT_NOTICE_FOOTER
-    notice_body_font_size: int = 13
-    notice_body_bold: bool = False
+    notice_body_font_size: int = 16
+    notice_body_bold: bool = True
     notice_body_italic: bool = False
-    notice_body_align: str = "left"
-    notice_body_font_family: str = "Noto Sans KR"
-    notice_footer_font_size: int = 12
+    notice_body_align: str = "center"
+    notice_body_font_family: str = "Malgun Gothic"
+    notice_footer_font_size: int = 16
     notice_footer_bold: bool = False
     notice_footer_italic: bool = False
     notice_footer_align: str = "left"
-    notice_footer_font_family: str = "Noto Sans KR"
-    notice_frame_color: str = "#0f172a"
-    notice_frame_padding: int = 24
+    notice_footer_font_family: str = "Malgun Gothic"
+    notice_frame_color: str = "#aaaaff"
+    notice_frame_padding: int = 18
     notice_repeat_enabled: bool = False
     notice_repeat_interval_min: int = 30
-    notice_window_width: int = 0
-    notice_window_height: int = 0
-    notice_window_preset: str = "auto"
+    notice_window_width: int = 800
+    notice_window_height: int = 420
+    notice_window_preset: str = "wide"
     notice_image_mode: str = DEFAULT_NOTICE_IMAGE_MODE
     notice_image_path: str = DEFAULT_NOTICE_IMAGE_PATH
     notice_bundled_image: str = DEFAULT_NOTICE_BUNDLED_IMAGE
-    notice_image_height: int = DEFAULT_NOTICE_IMAGE_HEIGHT
+    notice_image_height: int = 160
     admin_password: str = ""
     password_hash: str = ""
     password_salt: str = ""
     accent_theme: str = "sky"
-    accent_color: str = ""
+    accent_color: str = "#55aaff"
 
     def __post_init__(self):
         if self.urls is None:
@@ -345,7 +340,7 @@ class AppConfig:
             urls=list(data.get("urls", [])) or [data.get("url", DEFAULT_URL)],
             image_path=data.get("image_path", DEFAULT_LOCAL_IMAGE),
             work_dir=data.get("work_dir", WORK_DIR),
-            idle_to_show_sec=float(data.get("idle_to_show_sec", 10.0)),
+            idle_to_show_sec=float(data.get("idle_to_show_sec", 1200.0)),
             active_threshold_sec=float(data.get("active_threshold_sec", 1.0)),
             poll_sec=float(data.get("poll_sec", 0.5)),
             chrome_relaunch_cooldown_sec=float(
@@ -357,16 +352,16 @@ class AppConfig:
             chrome_repeat=bool(data.get("chrome_repeat", True)),
             ui_theme="accent",
             saver_image_mode=str(data.get("saver_image_mode", "bundled")),
-            saver_display_mode=str(data.get("saver_display_mode", "full")),
+            saver_display_mode=str(data.get("saver_display_mode", "workarea")),
             audio_url=data.get("audio_url", DEFAULT_AUDIO_URL),
             audio_urls=list(data.get("audio_urls", [])) or [
                 data.get("audio_url", DEFAULT_AUDIO_URL)
             ],
-            audio_enabled=bool(data.get("audio_enabled", True)),
+            audio_enabled=bool(data.get("audio_enabled", False)),
             audio_window_mode=data.get("audio_window_mode", "minimized"),
             audio_start_delay_sec=float(data.get("audio_start_delay_sec", 2.0)),
             audio_relaunch_cooldown_sec=float(
-                data.get("audio_relaunch_cooldown_sec", 10.0)
+                data.get("audio_relaunch_cooldown_sec", 180.0)
             ),
             audio_repeat_mode=str(data.get("audio_repeat_mode", "repeat")),
             audio_minimize_delay_sec=float(data.get("audio_minimize_delay_sec", 10.0)),
@@ -377,37 +372,37 @@ class AppConfig:
             audio_pwa_arguments=str(data.get("audio_pwa_arguments", "")),
             audio_pwa_use_proxy=bool(data.get("audio_pwa_use_proxy", False)),
             target_enabled=bool(data.get("target_enabled", True)),
-            target_window_mode=data.get("target_window_mode", inferred_mode),
-            target_start_delay_sec=float(data.get("target_start_delay_sec", 1.0)),
+            target_window_mode=data.get("target_window_mode", "normal"),
+            target_start_delay_sec=float(data.get("target_start_delay_sec", 2.0)),
             target_relaunch_cooldown_sec=float(
-                data.get("target_relaunch_cooldown_sec", 10.0)
+                data.get("target_relaunch_cooldown_sec", 600.0)
             ),
             target_refocus_interval_sec=float(
                 data.get("target_refocus_interval_sec", 3.0)
             ),
             target_repeat_mode=str(data.get("target_repeat_mode", "repeat")),
-            saver_start_delay_sec=float(data.get("saver_start_delay_sec", 1.0)),
+            saver_start_delay_sec=float(data.get("saver_start_delay_sec", 0.5)),
             notice_enabled=bool(data.get("notice_enabled", True)),
             notice_title=str(data.get("notice_title", DEFAULT_NOTICE_TITLE)),
             notice_body=str(data.get("notice_body", DEFAULT_NOTICE_BODY)),
             notice_footer=str(data.get("notice_footer", DEFAULT_NOTICE_FOOTER)),
-            notice_body_font_size=int(data.get("notice_body_font_size", 13)),
-            notice_body_bold=bool(data.get("notice_body_bold", False)),
+            notice_body_font_size=int(data.get("notice_body_font_size", 16)),
+            notice_body_bold=bool(data.get("notice_body_bold", True)),
             notice_body_italic=bool(data.get("notice_body_italic", False)),
-            notice_body_align=str(data.get("notice_body_align", "left")),
-            notice_body_font_family=str(data.get("notice_body_font_family", "Noto Sans KR")),
-            notice_footer_font_size=int(data.get("notice_footer_font_size", 12)),
+            notice_body_align=str(data.get("notice_body_align", "center")),
+            notice_body_font_family=str(data.get("notice_body_font_family", "Malgun Gothic")),
+            notice_footer_font_size=int(data.get("notice_footer_font_size", 16)),
             notice_footer_bold=bool(data.get("notice_footer_bold", False)),
             notice_footer_italic=bool(data.get("notice_footer_italic", False)),
             notice_footer_align=str(data.get("notice_footer_align", "left")),
-            notice_footer_font_family=str(data.get("notice_footer_font_family", "Noto Sans KR")),
-            notice_frame_color=str(data.get("notice_frame_color", "#0f172a")),
-            notice_frame_padding=int(data.get("notice_frame_padding", 24)),
+            notice_footer_font_family=str(data.get("notice_footer_font_family", "Malgun Gothic")),
+            notice_frame_color=str(data.get("notice_frame_color", "#aaaaff")),
+            notice_frame_padding=int(data.get("notice_frame_padding", 18)),
             notice_repeat_enabled=bool(data.get("notice_repeat_enabled", False)),
             notice_repeat_interval_min=int(data.get("notice_repeat_interval_min", 30)),
-            notice_window_width=int(data.get("notice_window_width", 0)),
-            notice_window_height=int(data.get("notice_window_height", 0)),
-            notice_window_preset=str(data.get("notice_window_preset", "auto")),
+            notice_window_width=int(data.get("notice_window_width", 800)),
+            notice_window_height=int(data.get("notice_window_height", 420)),
+            notice_window_preset=str(data.get("notice_window_preset", "wide")),
             notice_image_mode=str(data.get("notice_image_mode", DEFAULT_NOTICE_IMAGE_MODE)),
             notice_image_path=str(data.get("notice_image_path", DEFAULT_NOTICE_IMAGE_PATH)),
             notice_bundled_image=str(
@@ -418,7 +413,7 @@ class AppConfig:
             password_hash=str(data.get("password_hash", "")),
             password_salt=str(data.get("password_salt", "")),
             accent_theme=str(data.get("accent_theme", "sky")),
-            accent_color=str(data.get("accent_color", "")),
+            accent_color=str(data.get("accent_color", "#55aaff")),
         )
 
 
@@ -472,6 +467,10 @@ def save_config(cfg: AppConfig) -> None:
     try:
         with open(config_file_path(work_dir), "w", encoding="utf-8") as file:
             json.dump(data, file, ensure_ascii=False, indent=2)
+        if work_dir != WORK_DIR:
+            os.makedirs(WORK_DIR, exist_ok=True)
+            with open(config_file_path(WORK_DIR), "w", encoding="utf-8") as file:
+                json.dump(data, file, ensure_ascii=False, indent=2)
     except Exception as exc:
         log(f"CONFIG save error: {exc}")
 
@@ -508,7 +507,7 @@ def _normalize_hex_color(value: str) -> str:
     return value.lower()
 
 
-def build_palette(accent_theme: str, accent_color: str = "") -> dict:
+def build_palette(accent_theme: str, accent_color: str = "#55aaff") -> dict:
     accents = {
         "sky": ("#0ea5e9", "#38bdf8"),
         "indigo": ("#6366f1", "#818cf8"),
@@ -695,7 +694,6 @@ def detect_youtube_pwa_from_shortcuts() -> tuple[str, str, str, bool]:
         if root and os.path.exists(root):
             search_dirs.append(root)
     for root in search_dirs:
-        limit_to_youtube = root in fallback_roots and not candidate_dirs
         if not os.path.exists(root):
             continue
         for current_root, _dirs, files in os.walk(root):
@@ -712,7 +710,16 @@ def detect_youtube_pwa_from_shortcuts() -> tuple[str, str, str, bool]:
                         "$s.TargetPath + '|' + $s.Arguments"
                     )
                     cmd = ["powershell", "-NoProfile", "-Command", command]
-                    output = subprocess.check_output(cmd, text=True).strip()
+                    creationflags = (
+                        subprocess.CREATE_NO_WINDOW
+                        if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW")
+                        else 0
+                    )
+                    output = subprocess.check_output(
+                        cmd,
+                        text=True,
+                        creationflags=creationflags,
+                    ).strip()
                 except Exception:
                     continue
                 if "|" not in output:
@@ -2441,18 +2448,18 @@ class NoticeConfigDialog(QtWidgets.QDialog):
             notice_title=str(data.get("notice_title", DEFAULT_NOTICE_TITLE)),
             notice_body=str(data.get("notice_body", DEFAULT_NOTICE_BODY)),
             notice_footer=str(data.get("notice_footer", DEFAULT_NOTICE_FOOTER)),
-            notice_body_font_size=int(data.get("notice_body_font_size", 13)),
-            notice_body_bold=bool(data.get("notice_body_bold", False)),
+            notice_body_font_size=int(data.get("notice_body_font_size", 16)),
+            notice_body_bold=bool(data.get("notice_body_bold", True)),
             notice_body_italic=bool(data.get("notice_body_italic", False)),
-            notice_body_align=str(data.get("notice_body_align", "left")),
-            notice_body_font_family=str(data.get("notice_body_font_family", "Noto Sans KR")),
-            notice_footer_font_size=int(data.get("notice_footer_font_size", 12)),
+            notice_body_align=str(data.get("notice_body_align", "center")),
+            notice_body_font_family=str(data.get("notice_body_font_family", "Malgun Gothic")),
+            notice_footer_font_size=int(data.get("notice_footer_font_size", 16)),
             notice_footer_bold=bool(data.get("notice_footer_bold", False)),
             notice_footer_italic=bool(data.get("notice_footer_italic", False)),
             notice_footer_align=str(data.get("notice_footer_align", "left")),
-            notice_footer_font_family=str(data.get("notice_footer_font_family", "Noto Sans KR")),
-            notice_frame_color=str(data.get("notice_frame_color", "#0f172a")),
-            notice_frame_padding=int(data.get("notice_frame_padding", 24)),
+            notice_footer_font_family=str(data.get("notice_footer_font_family", "Malgun Gothic")),
+            notice_frame_color=str(data.get("notice_frame_color", "#aaaaff")),
+            notice_frame_padding=int(data.get("notice_frame_padding", 18)),
             notice_repeat_enabled=bool(data.get("notice_repeat_enabled", False)),
             notice_repeat_interval_min=int(data.get("notice_repeat_interval_min", 30)),
             notice_image_mode=str(data.get("notice_image_mode", DEFAULT_NOTICE_IMAGE_MODE)),
@@ -3081,6 +3088,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audio_launch_group.addButton(self.audio_launch_pwa)
         self.audio_launch_chrome.toggled.connect(self._update_audio_mode_availability)
         self.audio_launch_pwa.toggled.connect(self._update_audio_mode_availability)
+        self.audio_launch_pwa.toggled.connect(self._handle_audio_launch_mode_change)
         self.audio_pwa_status = QtWidgets.QLabel("")
         self.audio_pwa_status.setWordWrap(True)
         self.audio_pwa_command = QtWidgets.QLineEdit()
@@ -3135,6 +3143,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audio_mode.setEnabledOptions(enabled)
         if self.audio_mode.currentText() not in enabled:
             self.audio_mode.setCurrentText("normal" if "normal" in enabled else next(iter(enabled), ""))
+
+    def _handle_audio_launch_mode_change(self, checked: bool):
+        if checked and not getattr(self, "_loading", False):
+            if not getattr(self, "audio_pwa_app_id_value", ""):
+                self._handle_pwa_refresh()
 
     def _update_target_url_display(self):
         self.target_url.setText(self._format_url_summary(self.target_urls, DEFAULT_URL))
@@ -3630,7 +3643,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.audio_launch_pwa.setChecked(True)
         else:
             self.audio_launch_chrome.setChecked(True)
-            self._refresh_pwa_info()
+            self.audio_pwa_status.setText("PWA 탐색 전: 필요 시 [PWA 탐색]을 눌러주세요.")
+            self.audio_pwa_command.setText(cfg.audio_pwa_command_preview or "")
         self._update_audio_mode_availability()
 
         self.target_enabled.setChecked(cfg.target_enabled)
