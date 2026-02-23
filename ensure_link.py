@@ -3302,7 +3302,15 @@ class MainWindow(QtWidgets.QMainWindow):
             os.makedirs(new_dir, exist_ok=True)
             old_path = config_file_path(self.cfg.work_dir)
             new_path = config_file_path(new_dir)
-            if os.path.exists(old_path) and old_path != new_path:
+            old_norm = os.path.normcase(os.path.abspath(old_path))
+            new_norm = os.path.normcase(os.path.abspath(new_path))
+            same_config_file = old_norm == new_norm
+            if not same_config_file:
+                try:
+                    same_config_file = os.path.samefile(old_path, new_path)
+                except Exception:
+                    same_config_file = False
+            if os.path.exists(old_path) and not same_config_file:
                 try:
                     shutil.copy2(old_path, new_path)
                 except Exception as exc:
