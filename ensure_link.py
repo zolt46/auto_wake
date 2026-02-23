@@ -36,33 +36,6 @@ DEFAULT_NOTICE_BODY = """
 
 이용해 주셔서 감사합니다.
 
-===================================================================================
-
-▣  국회전자도서관 & 국립중앙도서관 협정 PC 이용 안내  ▣
-
-
-※   자료 원문에 대한 열람 · 출력 여부는 검색 결과 리스트 또는 상세 화면의 원문보기 이미지로 알 수 있습니다.   ※ 
- 
-!!!   원문보기 아이콘이 존재하지 않는 자료는 국회도서관에 직접 방문하시어 책자로만 이용이 가능한 점을 알려드립니다.   !!! 
-
-⁜   자료 출력을 원하시는 경우, iR-ADB C5850 프린트 선택 후 인쇄를 진행해 주시기를 바라며,   ⁜
-⁜              출력물의 수령은 참고자료실 데스크의 근로장학생에게 문의 부탁드립니다.             ⁜
-
-===================================================================================
-"""
-DEFAULT_NOTICE_FOOTER = """
-해당 기기 정책 ⇒ URL(일반, 반복), 세이버-팝업
-정보 매체 제공 정책에 따라 이용자에게 다음의 추가 행위가 수반될 수 있음을 알립니다.
-
-[ 크롬 브라우저 전체화면 / 키오스크 종료 안내 ]
-• F11 : 전체화면 해제
-• Alt + F4 : 키오스크 종료
-
-정책에 따라 지정된 사이트를 포함하는 크롬 브라우저를 종료하실 경우,
-일정 시간 이후 종료된 크롬 브라우저가 자동으로 다시 실행될 수 있습니다.
-
-계속 이용하시려면 크롬 브라우저를 종료하지 마시고, 최소화 하신 후 작업을 계속하여주시길 권장드립니다.
-"""
 DEFAULT_NOTICE_IMAGE_MODE = "bundled"
 DEFAULT_NOTICE_IMAGE_HEIGHT = 120
 DEFAULT_NOTICE_IMAGE_PATH = ""
@@ -212,6 +185,18 @@ def log(msg: str) -> None:
     path = os.path.join(WORK_DIR, "autowake.log")
     with open(path, "a", encoding="utf-8") as file:
         file.write(f"{datetime.now()} - {msg}\n")
+
+
+def set_system_volume(percent: float) -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        value = max(0, min(100, int(percent)))
+        volume = int((value / 100) * 0xFFFF)
+        packed = volume | (volume << 16)
+        ctypes.windll.winmm.waveOutSetVolume(0, packed)
+    except Exception as exc:
+        log(f"VOLUME set error: {exc}")
 
 
 def ensure_streams() -> None:
@@ -4397,6 +4382,13 @@ class SaverWorker(QtCore.QObject):
                         saver_trigger_at=time.time(),
                     )
                 self.window.show_fullscreen()
+                if not self.saver_visible:
+                    self.saver_visible = True
+                    write_notice_state(
+                        self.cfg.work_dir,
+                        saver_active=1.0,
+                        saver_trigger_at=time.time(),
+                    )
         if self.window.isVisible():
             self.window.refresh()
 
