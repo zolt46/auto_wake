@@ -1307,10 +1307,8 @@ class EasterEggDialog(QtWidgets.QDialog):
         self.setModal(True)
         self.setMinimumWidth(520)
         self.setStyleSheet(
-            """
-            QDialog { background-color: #0F172A; }
-            QLabel[popup-role="body"], QLabel[popup-role="hint"] { color: #E2E8F0; }
-            """
+            "QDialog { background-color: #0F172A; }"
+            "QLabel[popup-role=\"body\"], QLabel[popup-role=\"hint\"] { color: #E2E8F0; }"
         )
         layout = QtWidgets.QVBoxLayout(self)
         icon = load_app_icon()
