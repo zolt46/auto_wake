@@ -1926,13 +1926,14 @@ class NoticePreviewWidget(QtWidgets.QWidget):
     def _apply_palette(self) -> None:
         palette = self.palette
         self.view.setStyleSheet(
-            f"""
-            #NoticePreview {{
-                background: {palette['bg']};
-                border-radius: 14px;
-                border: none;
-            }}
-            """
+            " ".join(
+                [
+                    (
+                        "#NoticePreview { "
+                        f"background: {palette['bg']}; border-radius: 14px; border: none; }}"
+                    )
+                ]
+            )
         )
         self.view.setBackgroundBrush(QtGui.QColor(palette["bg"]))
 
@@ -2682,221 +2683,70 @@ class MainWindow(QtWidgets.QMainWindow):
     def _apply_palette(self):
         self.palette = build_palette(self.cfg.accent_theme, self.cfg.accent_color)
         palette = self.palette
-        stylesheet = f"""
-            QMainWindow {{ background: {palette['bg']}; }}
-            QLabel {{ color: {palette['text_primary']}; font-family: 'Noto Sans KR', 'Malgun Gothic', 'Segoe UI', sans-serif; font-size: 13px; font-weight: 500; }}
-            #TopBar {{
-                background: {palette['topbar']};
-                border-radius: 14px;
-                border: none;
-            }}
-            #TopTitle {{ font-size: 20px; font-weight: 700; }}
-            #StatePill {{
-                background: {palette['bg_card_alt']};
-                border: 1px solid {palette['border']};
-                padding: 4px 10px;
-                border-radius: 12px;
-                font-weight: 700;
-                font-size: 13px;
-                color: {palette['text_primary']};
-            }}
-            #FancyCard {{
-                background: {palette['bg_card']};
-                border-radius: 14px;
-                border: 1px solid {palette['border']};
-            }}
-            #CardTitle {{ font-size: 15px; font-weight: 700; }}
-            #CardSubtitle {{ color: {palette['text_muted']}; font-size: 12px; font-weight: 500; }}
-            #FormLabel {{ color: {palette['accent']}; font-size: 13px; font-weight: 600; }}
-            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
-                background: {palette['bg_card_alt']};
-                border: 1px solid {palette['border']};
-                padding: 6px 10px;
-                border-radius: 8px;
-                color: {palette['text_primary']};
-                font-size: 13px;
-            }}
-            QComboBox::drop-down {{ border: none; }}
-            QPushButton {{
-                background: {palette['accent']};
-                border-radius: 10px;
-                padding: 8px 14px;
-                color: #0b1220;
-                font-weight: 700;
-                font-size: 14px;
-            }}
-            QPushButton:focus {{ outline: none; }}
-            QPushButton:hover {{ background: {palette['accent_soft']}; }}
-            QPushButton:pressed {{
-                background: {palette['accent_dark']};
-                color: #f8fafc;
-            }}
-            QPushButton:disabled {{
-                background: {palette['accent_dark']};
-                color: #0b1220;
-            }}
-            QPushButton#GhostButton {{
-                background: {palette['accent']};
-                color: #0b1220;
-            }}
-            QPushButton#ModeButton:focus {{ outline: none; }}
-            QPushButton#ModeButton {{
-                background: {palette['bg_card_alt']};
-                color: {palette['text_primary']};
-                border: 1px solid {palette['border']};
-                padding: 6px 10px;
-                border-radius: 8px;
-                font-size: 12px;
-                font-weight: 600;
-            }}
-            QPushButton#ModeButton:checked {{
-                background: {palette['accent']};
-                color: #0b1220;
-            }}
-            QPushButton#ModeButton:hover {{
-                background: {palette['accent_soft']};
-                color: #0b1220;
-            }}
-            QPushButton#ModeButton:pressed {{
-                background: {palette['accent_dark']};
-                color: #f8fafc;
-            }}
-            QPushButton#StepperButton {{
-                background: {palette['bg_card_alt']};
-                color: {palette['text_primary']};
-                border: 1px solid {palette['border']};
-                border-radius: 10px;
-                min-width: 28px;
-                min-height: 28px;
-                padding: 0px;
-                font-size: 16px;
-                font-weight: 800;
-            }}
-            QPushButton#StepperButton:hover {{
-                background: {palette['accent_soft']};
-                color: #0b1220;
-            }}
-            QPushButton#StepperButton:pressed {{
-                background: {palette['accent_dark']};
-                color: #f8fafc;
-            }}
-            QPushButton#ThemeColorButton {{
-                background: {palette['accent']};
-                color: #0b1220;
-                border-radius: 10px;
-                padding: 6px 12px;
-                font-weight: 700;
-            }}
-            QPushButton#ThemeColorButton:hover {{ background: {palette['accent_soft']}; }}
-            QPushButton#ThemeColorButton:pressed {{
-                background: {palette['accent_dark']};
-                color: #f8fafc;
-            }}
-            QPushButton#StartButton {{
-                background: {palette['accent']};
-                color: #0b1220;
-            }}
-            QPushButton#StartButton:disabled {{
-                background: {palette['bg_dark']};
-                color: #f8fafc;
-            }}
-            QPushButton#StopButton {{
-                background: #f97316;
-                color: #fff7ed;
-            }}
-            QPushButton#StopButton:disabled {{
-                background: {palette['bg_dark']};
-                color: #f8fafc;
-            }}
-            #NoticeFrame {{
-                background: {palette['bg_card']};
-                border-radius: 16px;
-                border: 1px solid {palette['border']};
-            }}
-            #NoticeTitle {{ font-size: 18px; font-weight: 700; }}
-            #NoticeBody, #NoticeFooter {{ color: {palette['text_muted']}; }}
-            QDialog {{
-                background: {palette['dialog_bg']};
-                color: {palette['dialog_text']};
-            }}
-            QDialog QLabel {{
-                color: {palette['dialog_text']};
-            }}
-            QDialog QLineEdit {{
-                background: {palette['bg_card']};
-                border: 1px solid {palette['dialog_border']};
-                border-radius: 8px;
-                padding: 6px 10px;
-                color: {palette['dialog_text']};
-            }}
-            QDialog QPushButton {{
-                background: {palette['accent']};
-                color: #0b1220;
-                border-radius: 10px;
-                padding: 6px 12px;
-                font-weight: 700;
-            }}
-            QMessageBox {{
-                background: {palette['dialog_bg']};
-                color: {palette['dialog_text']};
-            }}
-            QMessageBox QLabel {{
-                color: {palette['dialog_text']};
-            }}
-            QMessageBox QPushButton {{
-                background: {palette['accent']};
-                color: #0b1220;
-                border-radius: 10px;
-                padding: 6px 12px;
-                font-weight: 700;
-            }}
-            QTabWidget::pane {{
-                border: none;
-                border-radius: 12px;
-                background: {palette['bg_card']};
-                margin-top: 14px;
-            }}
-            QTabWidget::tab-bar {{
-                top: 10px;
-                left: 32px;
-            }}
-            QTabWidget::tab-bar, QTabBar::tab-bar {{
-                border: none;
-                background: transparent;
-            }}
-            QTabWidget::pane, QTabWidget::tab-bar {{
-                border-top: none;
-            }}
-            QTabBar::base {{
-                border: none;
-                background: transparent;
-            }}
-            QTabBar::scroller {{
-                border: none;
-                background: transparent;
-            }}
-            QTabBar::tab:!selected {{
-                border-bottom: none;
-            }}
-            QTabBar::tab {{
-                background: {palette['tab_bg']};
-                color: {palette['text_primary']};
-                padding: 6px 12px;
-                margin-right: 6px;
-                margin-bottom: 0px;
-                border-top-left-radius: 10px;
-                border-top-right-radius: 10px;
-                border: none;
-                font-size: 13px;
-                font-weight: 600;
-            }}
-            QTabBar::tab:focus {{ outline: none; }}
-            QTabBar::tab:hover {{ background: {palette['accent_soft']}; color: #0b1220; }}
-            QTabBar::tab:selected {{
-                background: {palette['tab_active']};
-                color: {palette['text_primary']};
-            }}
-        """
+        stylesheet = " ".join(
+            [
+                f"QMainWindow {{ background: {palette['bg']}; }}",
+                (
+                    "QLabel { "
+                    f"color: {palette['text_primary']}; font-family: 'Noto Sans KR', 'Malgun Gothic', 'Segoe UI', sans-serif; "
+                    "font-size: 13px; font-weight: 500; }"
+                ),
+                f"#TopBar {{ background: {palette['topbar']}; border-radius: 14px; border: none; }}",
+                "#TopTitle { font-size: 20px; font-weight: 700; }",
+                (
+                    "#StatePill { "
+                    f"background: {palette['bg_card_alt']}; border: 1px solid {palette['border']}; "
+                    f"color: {palette['text_primary']}; padding: 4px 10px; border-radius: 12px; font-weight: 700; font-size: 13px; }}"
+                ),
+                (
+                    "#FancyCard { "
+                    f"background: {palette['bg_card']}; border-radius: 14px; border: 1px solid {palette['border']}; }}"
+                ),
+                f"#CardTitle {{ font-size: 15px; font-weight: 700; }}",
+                f"#CardSubtitle {{ color: {palette['text_muted']}; font-size: 12px; font-weight: 500; }}",
+                f"#FormLabel {{ color: {palette['accent']}; font-size: 13px; font-weight: 600; }}",
+                (
+                    "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { "
+                    f"background: {palette['bg_card_alt']}; border: 1px solid {palette['border']}; "
+                    f"color: {palette['text_primary']}; padding: 6px 10px; border-radius: 8px; font-size: 13px; }}"
+                ),
+                "QComboBox::drop-down { border: none; }",
+                (
+                    "QPushButton { "
+                    f"background: {palette['accent']}; border-radius: 10px; padding: 8px 14px; "
+                    "color: #0b1220; font-weight: 700; font-size: 14px; }"
+                ),
+                f"QPushButton:hover {{ background: {palette['accent_soft']}; }}",
+                f"QPushButton:pressed {{ background: {palette['accent_dark']}; color: #f8fafc; }}",
+                f"QPushButton:disabled {{ background: {palette['accent_dark']}; color: #0b1220; }}",
+                (
+                    "QTabWidget::pane { "
+                    f"border: none; border-radius: 12px; background: {palette['bg_card']}; margin-top: 14px; }}"
+                ),
+                "QTabWidget::tab-bar { top: 10px; left: 32px; }",
+                (
+                    "QTabBar::tab { "
+                    f"background: {palette['tab_bg']}; color: {palette['text_primary']}; "
+                    "padding: 6px 12px; margin-right: 6px; margin-bottom: 0px; border-top-left-radius: 10px; "
+                    "border-top-right-radius: 10px; border: none; font-size: 13px; font-weight: 600; }"
+                ),
+                f"QTabBar::tab:hover {{ background: {palette['accent_soft']}; color: #0b1220; }}",
+                f"QTabBar::tab:selected {{ background: {palette['tab_active']}; color: {palette['text_primary']}; }}",
+                f"QDialog {{ background: {palette['dialog_bg']}; color: {palette['dialog_text']}; }}",
+                f"QDialog QLabel {{ color: {palette['dialog_text']}; }}",
+                (
+                    "QDialog QLineEdit { "
+                    f"background: {palette['bg_card']}; border: 1px solid {palette['dialog_border']}; "
+                    "border-radius: 8px; padding: 6px 10px; "
+                    f"color: {palette['dialog_text']}; }}"
+                ),
+                (
+                    "QDialog QPushButton, QMessageBox QPushButton { "
+                    f"background: {palette['accent']}; color: #0b1220; border-radius: 10px; "
+                    "padding: 6px 12px; font-weight: 700; }"
+                ),
+            ]
+        )
         self.setStyleSheet(stylesheet)
         if self.tray_icon:
             self.tray_icon.setIcon(self._build_tray_icon())
