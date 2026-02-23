@@ -2749,6 +2749,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._raising_window = False
         self._ui_active = False
         self.notice_config: dict[str, object] = {}
+        self.audio_pwa_app_id_value = self.cfg.audio_pwa_app_id or ""
+        self.audio_pwa_browser_hint = self.cfg.audio_pwa_browser_hint or ""
+        self.audio_pwa_arguments = self.cfg.audio_pwa_arguments or ""
+        self.audio_pwa_use_proxy = bool(self.cfg.audio_pwa_use_proxy)
         write_notice_state(self.cfg.work_dir, ui_active=0.0)
         self._build_ui()
         self._apply_palette()
@@ -3644,7 +3648,7 @@ class MainWindow(QtWidgets.QMainWindow):
             audio_relaunch_cooldown_sec=self.audio_relaunch_cooldown.value(),
             audio_repeat_mode=self.audio_repeat_mode.currentText(),
             audio_launch_mode="pwa" if self.audio_launch_pwa.isChecked() else "chrome",
-            audio_pwa_app_id=self.audio_pwa_app_id_value,
+            audio_pwa_app_id=getattr(self, "audio_pwa_app_id_value", ""),
             audio_pwa_command_preview=self.audio_pwa_command.text().strip(),
             audio_pwa_browser_hint=getattr(self, "audio_pwa_browser_hint", ""),
             audio_pwa_arguments=getattr(self, "audio_pwa_arguments", ""),
@@ -3837,23 +3841,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process_manager.stop_all()
         self.is_running = False
         self._update_run_state_labels()
-
-    def _sync_workers(self) -> None:
-        if not self.is_running:
-            return
-        cfg = self.cfg
-        if cfg.audio_enabled:
-            self.process_manager.start("audio")
-        else:
-            self.process_manager.stop("audio")
-        if cfg.target_enabled or cfg.notice_enabled:
-            self.process_manager.start("target")
-        else:
-            self.process_manager.stop("target")
-        if cfg.saver_enabled:
-            self.process_manager.start("saver")
-        else:
-            self.process_manager.stop("saver")
 
     def _sync_workers(self) -> None:
         if not self.is_running:
