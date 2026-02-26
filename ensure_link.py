@@ -471,31 +471,47 @@ def verify_password(password: str, password_hash: str, salt: str) -> bool:
     return hash_password(password, salt) == password_hash
 
 
+def _runtime_base_dir() -> str:
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _config_search_paths() -> list[str]:
+    roots: list[str] = []
+    for root in [_runtime_base_dir(), os.getcwd(), WORK_DIR]:
+        if not root:
+            continue
+        normalized = os.path.normcase(os.path.abspath(root))
+        if normalized in roots:
+            continue
+        roots.append(normalized)
+    return [config_file_path(path) for path in roots]
+
+
 def load_config() -> AppConfig:
-    config_root = WORK_DIR
-    try:
-        os.makedirs(config_root, exist_ok=True)
-    except Exception as exc:
-        log(f"CONFIG root unavailable ({config_root}): {exc}")
-        config_root = os.getcwd()
+    data: dict = {}
+    selected_path = ""
+    for path in _config_search_paths():
+        if not os.path.exists(path):
+            continue
         try:
-            os.makedirs(config_root, exist_ok=True)
-        except Exception as fallback_exc:
-            log(f"CONFIG fallback root unavailable ({config_root}): {fallback_exc}")
-    primary_path = config_file_path(config_root)
-    if not os.path.exists(primary_path):
+            with open(path, "r", encoding="utf-8") as file:
+                data = json.load(file)
+            selected_path = path
+            break
+        except Exception as exc:
+            log(f"CONFIG load error ({path}): {exc}")
+    if not selected_path:
+        config_root = _runtime_base_dir()
         cfg = AppConfig(work_dir=config_root)
         save_config(cfg)
         return cfg
     try:
-        with open(primary_path, "r", encoding="utf-8") as file:
-            data = json.load(file)
         cfg = AppConfig.from_dict(data)
-        work_norm = os.path.normcase(os.path.abspath(cfg.work_dir or WORK_DIR))
-        root_norm = os.path.normcase(os.path.abspath(config_root))
-        if cfg.work_dir and work_norm != root_norm:
+        if cfg.work_dir:
             alt_path = config_file_path(cfg.work_dir)
-            if os.path.exists(alt_path):
+            if os.path.exists(alt_path) and os.path.normcase(os.path.abspath(alt_path)) != os.path.normcase(os.path.abspath(selected_path)):
                 with open(alt_path, "r", encoding="utf-8") as file:
                     data = json.load(file)
                 cfg = AppConfig.from_dict(data)
@@ -506,8 +522,8 @@ def load_config() -> AppConfig:
             save_config(cfg)
         return cfg
     except Exception as exc:
-        log(f"CONFIG load error: {exc}")
-        return AppConfig(work_dir=config_root)
+        log(f"CONFIG parse error ({selected_path}): {exc}")
+        return AppConfig(work_dir=_runtime_base_dir())
 
 
 def save_config(cfg: AppConfig) -> None:
