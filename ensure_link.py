@@ -528,25 +528,17 @@ def save_config(cfg: AppConfig) -> None:
     try:
         with open(config_file_path(work_dir), "w", encoding="utf-8") as file:
             json.dump(data, file, ensure_ascii=False, indent=2)
-        if work_dir != WORK_DIR:
-            os.makedirs(WORK_DIR, exist_ok=True)
-            with open(config_file_path(WORK_DIR), "w", encoding="utf-8") as file:
-                json.dump(data, file, ensure_ascii=False, indent=2)
     except Exception as exc:
         log(f"CONFIG save error: {exc}")
         return
 
-    work_norm = os.path.normcase(os.path.abspath(work_dir))
-    default_norm = os.path.normcase(os.path.abspath(WORK_DIR))
-    if work_norm == default_norm:
-        return
 
-    try:
-        os.makedirs(WORK_DIR, exist_ok=True)
-        with open(config_file_path(WORK_DIR), "w", encoding="utf-8") as file:
-            json.dump(data, file, ensure_ascii=False, indent=2)
-    except Exception as exc:
-        log(f"CONFIG mirror save error: {exc}")
+def _strip_pwa_profile_args(launcher_args: str) -> str:
+    if not launcher_args:
+        return ""
+    cleaned = re.sub(r'--user-data-dir=("[^"]+"|\S+)', "", launcher_args)
+    cleaned = re.sub(r'--profile-directory=("[^"]+"|\S+)', "", cleaned)
+    return " ".join(cleaned.split())
 
 
 def _blend_with_white(hex_color: str, ratio: float) -> str:
@@ -869,6 +861,7 @@ def build_pwa_command_preview(
     launcher_args: str,
     url: str,
     random_mode: bool,
+    user_data_dir: str = "",
 ) -> str:
     if not app_id:
         return ""
@@ -876,6 +869,9 @@ def build_pwa_command_preview(
     if url:
         launch_url_arg = f'--app-launch-url-for-shortcuts-menu-item="{url}"'
     cleaned_args = _clean_launch_url_arg(launcher_args)
+    if user_data_dir:
+        cleaned_args = _strip_pwa_profile_args(cleaned_args)
+        cleaned_args = f'--user-data-dir="{user_data_dir}" --profile-directory=Default {cleaned_args}'.strip()
     if os.path.isfile(browser_hint):
         base = f"{browser_hint} {cleaned_args}".strip()
         preview_items = [base, launch_url_arg]
@@ -899,6 +895,7 @@ def launch_pwa(
     browser_hint: str,
     launcher_args: str,
     url: str,
+    user_data_dir: str = "",
 ) -> Optional[subprocess.Popen]:
     if not app_id:
         return None
@@ -915,6 +912,9 @@ def launch_pwa(
                 browser = edge
     args = [browser]
     cleaned_args = _clean_launch_url_arg(launcher_args)
+    if user_data_dir:
+        cleaned_args = _strip_pwa_profile_args(cleaned_args)
+        cleaned_args = f'--user-data-dir="{user_data_dir}" --profile-directory=Default {cleaned_args}'.strip()
     if cleaned_args:
         args.extend(shlex.split(cleaned_args, posix=False))
     else:
@@ -3811,6 +3811,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 launcher_args,
                 preview_url,
                 self.audio_repeat_mode.currentText() == "repeat",
+                os.path.join(self.cfg.work_dir, "chrome_profiles", "audio"),
             )
             self.audio_pwa_command.setText(command_preview)
             self.audio_pwa_status.setText(f"PWA 탐색됨: {app_id}")
@@ -3976,6 +3977,7 @@ class AudioWorker:
                             browser_hint,
                             self.cfg.audio_pwa_arguments,
                             url,
+                            os.path.join(self.cfg.work_dir, "chrome_profiles", "audio"),
                         )
                         if self.proc is None:
                             log("PWA launch failed; falling back to Chrome.")
