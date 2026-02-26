@@ -911,7 +911,7 @@ def build_pwa_command_preview(
     if user_data_dir:
         user_data_dir = os.path.normpath(user_data_dir)
         cleaned_args = _strip_pwa_profile_args(cleaned_args)
-        cleaned_args = f'--user-data-dir="{user_data_dir}" --profile-directory=Default {cleaned_args}'.strip()
+        cleaned_args = f"--user-data-dir={user_data_dir} --profile-directory=Default {cleaned_args}".strip()
     browser = _resolve_pwa_launcher(browser_hint)
     if os.path.isfile(browser):
         base = f"{browser} {cleaned_args}".strip()
@@ -946,7 +946,16 @@ def launch_pwa(
     if user_data_dir:
         user_data_dir = os.path.normpath(user_data_dir)
         cleaned_args = _strip_pwa_profile_args(cleaned_args)
-        cleaned_args = f'--user-data-dir="{user_data_dir}" --profile-directory=Default {cleaned_args}'.strip()
+        try:
+            os.makedirs(user_data_dir, exist_ok=True)
+        except Exception as exc:
+            log(f"PWA profile dir create error ({user_data_dir}): {exc}")
+        args.extend(
+            [
+                f"--user-data-dir={user_data_dir}",
+                "--profile-directory=Default",
+            ]
+        )
     if cleaned_args:
         args.extend(shlex.split(cleaned_args, posix=False))
     else:
