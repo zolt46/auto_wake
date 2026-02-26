@@ -219,18 +219,23 @@ def update_notice_state_counter(work_dir: str, key: str, delta: int) -> None:
 def log(msg: str) -> None:
     timestamped = f"{datetime.now()} - {msg}\n"
     candidates: list[str] = []
-    try:
-        candidates.append(WORK_DIR)
-    except Exception:
-        pass
-    try:
-        candidates.append(os.getcwd())
-    except Exception:
-        pass
-    for directory in candidates:
+    for resolver in (
+        lambda: _runtime_base_dir(),
+        lambda: os.getcwd(),
+        lambda: WORK_DIR,
+    ):
         try:
-            if not directory:
-                continue
+            directory = resolver()
+        except Exception:
+            continue
+        if directory:
+            candidates.append(os.path.normcase(os.path.abspath(directory)))
+    seen: set[str] = set()
+    for directory in candidates:
+        if directory in seen:
+            continue
+        seen.add(directory)
+        try:
             os.makedirs(directory, exist_ok=True)
             path = os.path.join(directory, "autowake.log")
             with open(path, "a", encoding="utf-8") as file:
@@ -471,31 +476,47 @@ def verify_password(password: str, password_hash: str, salt: str) -> bool:
     return hash_password(password, salt) == password_hash
 
 
+def _runtime_base_dir() -> str:
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _config_search_paths() -> list[str]:
+    roots: list[str] = []
+    for root in [_runtime_base_dir(), os.getcwd(), WORK_DIR]:
+        if not root:
+            continue
+        normalized = os.path.normcase(os.path.abspath(root))
+        if normalized in roots:
+            continue
+        roots.append(normalized)
+    return [config_file_path(path) for path in roots]
+
+
 def load_config() -> AppConfig:
-    config_root = WORK_DIR
-    try:
-        os.makedirs(config_root, exist_ok=True)
-    except Exception as exc:
-        log(f"CONFIG root unavailable ({config_root}): {exc}")
-        config_root = os.getcwd()
+    data: dict = {}
+    selected_path = ""
+    for path in _config_search_paths():
+        if not os.path.exists(path):
+            continue
         try:
-            os.makedirs(config_root, exist_ok=True)
-        except Exception as fallback_exc:
-            log(f"CONFIG fallback root unavailable ({config_root}): {fallback_exc}")
-    primary_path = config_file_path(config_root)
-    if not os.path.exists(primary_path):
+            with open(path, "r", encoding="utf-8") as file:
+                data = json.load(file)
+            selected_path = path
+            break
+        except Exception as exc:
+            log(f"CONFIG load error ({path}): {exc}")
+    if not selected_path:
+        config_root = _runtime_base_dir()
         cfg = AppConfig(work_dir=config_root)
         save_config(cfg)
         return cfg
     try:
-        with open(primary_path, "r", encoding="utf-8") as file:
-            data = json.load(file)
         cfg = AppConfig.from_dict(data)
-        work_norm = os.path.normcase(os.path.abspath(cfg.work_dir or WORK_DIR))
-        root_norm = os.path.normcase(os.path.abspath(config_root))
-        if cfg.work_dir and work_norm != root_norm:
+        if cfg.work_dir:
             alt_path = config_file_path(cfg.work_dir)
-            if os.path.exists(alt_path):
+            if os.path.exists(alt_path) and os.path.normcase(os.path.abspath(alt_path)) != os.path.normcase(os.path.abspath(selected_path)):
                 with open(alt_path, "r", encoding="utf-8") as file:
                     data = json.load(file)
                 cfg = AppConfig.from_dict(data)
@@ -506,8 +527,8 @@ def load_config() -> AppConfig:
             save_config(cfg)
         return cfg
     except Exception as exc:
-        log(f"CONFIG load error: {exc}")
-        return AppConfig(work_dir=config_root)
+        log(f"CONFIG parse error ({selected_path}): {exc}")
+        return AppConfig(work_dir=_runtime_base_dir())
 
 
 def save_config(cfg: AppConfig) -> None:
@@ -528,25 +549,17 @@ def save_config(cfg: AppConfig) -> None:
     try:
         with open(config_file_path(work_dir), "w", encoding="utf-8") as file:
             json.dump(data, file, ensure_ascii=False, indent=2)
-        if work_dir != WORK_DIR:
-            os.makedirs(WORK_DIR, exist_ok=True)
-            with open(config_file_path(WORK_DIR), "w", encoding="utf-8") as file:
-                json.dump(data, file, ensure_ascii=False, indent=2)
     except Exception as exc:
         log(f"CONFIG save error: {exc}")
         return
 
-    work_norm = os.path.normcase(os.path.abspath(work_dir))
-    default_norm = os.path.normcase(os.path.abspath(WORK_DIR))
-    if work_norm == default_norm:
-        return
 
-    try:
-        os.makedirs(WORK_DIR, exist_ok=True)
-        with open(config_file_path(WORK_DIR), "w", encoding="utf-8") as file:
-            json.dump(data, file, ensure_ascii=False, indent=2)
-    except Exception as exc:
-        log(f"CONFIG mirror save error: {exc}")
+def _strip_pwa_profile_args(launcher_args: str) -> str:
+    if not launcher_args:
+        return ""
+    cleaned = re.sub(r'--user-data-dir=("[^"]+"|\S+)', "", launcher_args)
+    cleaned = re.sub(r'--profile-directory=("[^"]+"|\S+)', "", cleaned)
+    return " ".join(cleaned.split())
 
 
 def _blend_with_white(hex_color: str, ratio: float) -> str:
@@ -676,6 +689,24 @@ def find_chrome_exe() -> str:
             return resolved
     log("Chrome/Edge executable not found; falling back to 'chrome' in PATH.")
     return "chrome"
+
+
+def _resolve_pwa_launcher(browser_hint: str) -> str:
+    browser_candidate = browser_hint.strip().strip('"')
+    if os.path.isfile(browser_candidate):
+        name = os.path.basename(browser_candidate).lower()
+        if name == "chrome_proxy.exe":
+            chrome_candidate = os.path.join(os.path.dirname(browser_candidate), "chrome.exe")
+            if os.path.isfile(chrome_candidate):
+                return chrome_candidate
+            return find_chrome_exe()
+        return browser_candidate
+    browser = find_chrome_exe()
+    if browser_hint == "msedge":
+        edge = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "Application", "msedge.exe")
+        if edge and os.path.exists(edge):
+            browser = edge
+    return browser
 
 
 def _iter_manifest_candidates(user_data_dir: str) -> list[str]:
@@ -869,6 +900,7 @@ def build_pwa_command_preview(
     launcher_args: str,
     url: str,
     random_mode: bool,
+    user_data_dir: str = "",
 ) -> str:
     if not app_id:
         return ""
@@ -876,8 +908,13 @@ def build_pwa_command_preview(
     if url:
         launch_url_arg = f'--app-launch-url-for-shortcuts-menu-item="{url}"'
     cleaned_args = _clean_launch_url_arg(launcher_args)
-    if os.path.isfile(browser_hint):
-        base = f"{browser_hint} {cleaned_args}".strip()
+    if user_data_dir:
+        user_data_dir = os.path.normpath(user_data_dir)
+        cleaned_args = _strip_pwa_profile_args(cleaned_args)
+        cleaned_args = f'--user-data-dir="{user_data_dir}" --profile-directory=Default {cleaned_args}'.strip()
+    browser = _resolve_pwa_launcher(browser_hint)
+    if os.path.isfile(browser):
+        base = f"{browser} {cleaned_args}".strip()
         preview_items = [base, launch_url_arg]
         if random_mode:
             preview_items.append("# 랜덤 URL은 실행 시 선택됩니다.")
@@ -899,22 +936,17 @@ def launch_pwa(
     browser_hint: str,
     launcher_args: str,
     url: str,
+    user_data_dir: str = "",
 ) -> Optional[subprocess.Popen]:
     if not app_id:
         return None
-    browser_candidate = browser_hint.strip().strip('"')
-    if os.path.isfile(browser_candidate):
-        browser = browser_candidate
-    else:
-        browser = find_chrome_exe()
-        if browser_hint == "msedge":
-            edge = os.path.join(
-                os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "Application", "msedge.exe"
-            )
-            if edge and os.path.exists(edge):
-                browser = edge
+    browser = _resolve_pwa_launcher(browser_hint)
     args = [browser]
     cleaned_args = _clean_launch_url_arg(launcher_args)
+    if user_data_dir:
+        user_data_dir = os.path.normpath(user_data_dir)
+        cleaned_args = _strip_pwa_profile_args(cleaned_args)
+        cleaned_args = f'--user-data-dir="{user_data_dir}" --profile-directory=Default {cleaned_args}'.strip()
     if cleaned_args:
         args.extend(shlex.split(cleaned_args, posix=False))
     else:
@@ -3811,6 +3843,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 launcher_args,
                 preview_url,
                 self.audio_repeat_mode.currentText() == "repeat",
+                os.path.join(self.cfg.work_dir, "chrome_profiles", "audio"),
             )
             self.audio_pwa_command.setText(command_preview)
             self.audio_pwa_status.setText(f"PWA 탐색됨: {app_id}")
@@ -3976,6 +4009,7 @@ class AudioWorker:
                             browser_hint,
                             self.cfg.audio_pwa_arguments,
                             url,
+                            os.path.join(self.cfg.work_dir, "chrome_profiles", "audio"),
                         )
                         if self.proc is None:
                             log("PWA launch failed; falling back to Chrome.")
