@@ -1105,14 +1105,21 @@ def terminate_process(pid: int) -> None:
 def find_chrome_processes_by_profile(profile_dir: str) -> list[int]:
     if os.name != "nt" or not profile_dir:
         return []
+    target = os.path.normcase(os.path.normpath(profile_dir).replace("/", "\\"))
     try:
-        escaped = profile_dir.replace("\\", "\\\\")
-        query = f"CommandLine like '%--user-data-dir={escaped}%'"
         creationflags = (
             subprocess.CREATE_NO_WINDOW if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW") else 0
         )
         output = subprocess.check_output(
-            ["wmic", "process", "where", query, "get", "ProcessId,CommandLine", "/format:csv"],
+            [
+                "wmic",
+                "process",
+                "where",
+                "(name='chrome.exe' or name='msedge.exe' or name='chrome_proxy.exe') and CommandLine is not null",
+                "get",
+                "ProcessId,CommandLine",
+                "/format:csv",
+            ],
             text=True,
             stderr=subprocess.DEVNULL,
             creationflags=creationflags,
@@ -1120,14 +1127,25 @@ def find_chrome_processes_by_profile(profile_dir: str) -> list[int]:
     except Exception:
         return []
     pids: list[int] = []
+    pattern = re.compile(r'--user-data-dir=(?:"([^"]+)"|(\S+))', re.IGNORECASE)
     for line in output.splitlines():
         if "--user-data-dir" not in line:
             continue
         parts = [part for part in line.split(",") if part]
-        if not parts:
+        if len(parts) < 2:
             continue
+        command_line = parts[-2].strip()
         pid_str = parts[-1].strip()
-        if pid_str.isdigit():
+        if not pid_str.isdigit():
+            continue
+        match = pattern.search(command_line)
+        if not match:
+            continue
+        value = (match.group(1) or match.group(2) or "").strip().strip('"')
+        if not value:
+            continue
+        normalized = os.path.normcase(os.path.normpath(value).replace("/", "\\"))
+        if normalized == target:
             pids.append(int(pid_str))
     return pids
 
@@ -4276,12 +4294,16 @@ class TargetWorker(QtCore.QObject):
         if self.proc is None or self.proc.poll() is not None:
             profile = os.path.join(self.cfg.work_dir, "chrome_profiles", "target")
             os.makedirs(profile, exist_ok=True)
-            existing = [
-                pid for pid in find_chrome_processes_by_profile(profile)
-                if find_window_handles_by_pid(pid)
-            ]
-            if existing:
-                self.external_pid = existing[0]
+            existing_all = find_chrome_processes_by_profile(profile)
+            if len(existing_all) > 1:
+                visible = [pid for pid in existing_all if find_window_handles_by_pid(pid)]
+                keep_pid = visible[0] if visible else existing_all[0]
+                for pid in existing_all:
+                    if pid != keep_pid:
+                        terminate_process(pid)
+                existing_all = [keep_pid]
+            if existing_all:
+                self.external_pid = existing_all[0]
                 self.last_launch = time.time()
                 self.pending_launch_at = None
                 self.once_launched = True
@@ -4326,6 +4348,8 @@ class TargetWorker(QtCore.QObject):
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
         self.proc = None
+        if self.external_pid:
+            terminate_process(self.external_pid)
         self.external_pid = None
         self.last_minimized_pid = None
         self.pending_minimize_pid = None
