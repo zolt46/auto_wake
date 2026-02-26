@@ -219,18 +219,23 @@ def update_notice_state_counter(work_dir: str, key: str, delta: int) -> None:
 def log(msg: str) -> None:
     timestamped = f"{datetime.now()} - {msg}\n"
     candidates: list[str] = []
-    try:
-        candidates.append(WORK_DIR)
-    except Exception:
-        pass
-    try:
-        candidates.append(os.getcwd())
-    except Exception:
-        pass
-    for directory in candidates:
+    for resolver in (
+        lambda: _runtime_base_dir(),
+        lambda: os.getcwd(),
+        lambda: WORK_DIR,
+    ):
         try:
-            if not directory:
-                continue
+            directory = resolver()
+        except Exception:
+            continue
+        if directory:
+            candidates.append(os.path.normcase(os.path.abspath(directory)))
+    seen: set[str] = set()
+    for directory in candidates:
+        if directory in seen:
+            continue
+        seen.add(directory)
+        try:
             os.makedirs(directory, exist_ok=True)
             path = os.path.join(directory, "autowake.log")
             with open(path, "a", encoding="utf-8") as file:
@@ -686,6 +691,24 @@ def find_chrome_exe() -> str:
     return "chrome"
 
 
+def _resolve_pwa_launcher(browser_hint: str) -> str:
+    browser_candidate = browser_hint.strip().strip('"')
+    if os.path.isfile(browser_candidate):
+        name = os.path.basename(browser_candidate).lower()
+        if name == "chrome_proxy.exe":
+            chrome_candidate = os.path.join(os.path.dirname(browser_candidate), "chrome.exe")
+            if os.path.isfile(chrome_candidate):
+                return chrome_candidate
+            return find_chrome_exe()
+        return browser_candidate
+    browser = find_chrome_exe()
+    if browser_hint == "msedge":
+        edge = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "Application", "msedge.exe")
+        if edge and os.path.exists(edge):
+            browser = edge
+    return browser
+
+
 def _iter_manifest_candidates(user_data_dir: str) -> list[str]:
     manifests: list[str] = []
     if not user_data_dir or not os.path.exists(user_data_dir):
@@ -886,10 +909,12 @@ def build_pwa_command_preview(
         launch_url_arg = f'--app-launch-url-for-shortcuts-menu-item="{url}"'
     cleaned_args = _clean_launch_url_arg(launcher_args)
     if user_data_dir:
+        user_data_dir = os.path.normpath(user_data_dir)
         cleaned_args = _strip_pwa_profile_args(cleaned_args)
         cleaned_args = f'--user-data-dir="{user_data_dir}" --profile-directory=Default {cleaned_args}'.strip()
-    if os.path.isfile(browser_hint):
-        base = f"{browser_hint} {cleaned_args}".strip()
+    browser = _resolve_pwa_launcher(browser_hint)
+    if os.path.isfile(browser):
+        base = f"{browser} {cleaned_args}".strip()
         preview_items = [base, launch_url_arg]
         if random_mode:
             preview_items.append("# 랜덤 URL은 실행 시 선택됩니다.")
@@ -915,20 +940,11 @@ def launch_pwa(
 ) -> Optional[subprocess.Popen]:
     if not app_id:
         return None
-    browser_candidate = browser_hint.strip().strip('"')
-    if os.path.isfile(browser_candidate):
-        browser = browser_candidate
-    else:
-        browser = find_chrome_exe()
-        if browser_hint == "msedge":
-            edge = os.path.join(
-                os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "Application", "msedge.exe"
-            )
-            if edge and os.path.exists(edge):
-                browser = edge
+    browser = _resolve_pwa_launcher(browser_hint)
     args = [browser]
     cleaned_args = _clean_launch_url_arg(launcher_args)
     if user_data_dir:
+        user_data_dir = os.path.normpath(user_data_dir)
         cleaned_args = _strip_pwa_profile_args(cleaned_args)
         cleaned_args = f'--user-data-dir="{user_data_dir}" --profile-directory=Default {cleaned_args}'.strip()
     if cleaned_args:
